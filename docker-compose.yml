@@ -5,7 +5,7 @@ services:
       - "8080:8080"
     environment:
       - SPRING_DATA_MONGODB_URI=mongodb://mongo:27017/smart-trader
-      - ADVANCED_TRADE_CREDENTIALS=${ADVANCED_TRADE_CREDENTIALS}
+      - CREDENTIAL_ENCRYPTION_KEY=${CREDENTIAL_ENCRYPTION_KEY}
     depends_on:
       mongo:
         condition: service_healthy

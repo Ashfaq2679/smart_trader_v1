@@ -8,37 +8,26 @@ import org.springframework.cache.caffeine.CaffeineCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import com.coinbase.advanced.client.CoinbaseAdvancedClient;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.techcobber.smarttrader.v1.services.ClientService;
-import com.techcobber.smarttrader.v1.services.CoinbasePublicServiceImpl;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Central Spring configuration for application beans and caching.
+ * Central Spring configuration for caching infrastructure.
  *
  * <p><b>Design Pattern: Factory Method</b> — Each {@code @Bean} method acts as a
- * factory method, encapsulating the creation logic for Coinbase API clients,
- * service instances, and cache infrastructure. Spring invokes these factory
- * methods to produce and manage singleton instances in the application context.</p>
+ * factory method, encapsulating the creation logic for cache infrastructure.
+ * Spring invokes these factory methods to produce and manage singleton instances
+ * in the application context.</p>
+ *
+ * <p>Coinbase API clients are no longer created as application-wide singletons.
+ * Per-user clients are managed by
+ * {@link com.techcobber.smarttrader.v1.services.CoinbaseClientFactory}.</p>
  */
 @Configuration
 @EnableCaching
 @Slf4j
-@RequiredArgsConstructor
 public class AppConfig {
-	private final ClientService clientService;
-	@Bean
-	CoinbaseAdvancedClient coinbaseAdvancedClient() {
-		return clientService.getClient();
-	}
-
-	@Bean
-	CoinbasePublicServiceImpl coinbasePublicServiceImpl() {
-		return new CoinbasePublicServiceImpl(clientService.getClient());
-	}
 
 	@Bean
 	Caffeine<Object, Object> caffeineConfig() {

@@ -3,8 +3,6 @@ package com.techcobber.smarttrader.v1.services;
 import java.util.List;
 
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.context.annotation.Lazy;
-import org.springframework.stereotype.Component;
 
 import com.coinbase.advanced.client.CoinbaseAdvancedClient;
 import com.coinbase.advanced.errors.CoinbaseAdvancedException;
@@ -28,9 +26,11 @@ import lombok.extern.slf4j.Slf4j;
  * while overriding/extending behaviour with product-specific query methods.
  * The base class provides the {@code request()} template; this subclass defines
  * the concrete steps (URL construction, response filtering, sorting).</p>
+ *
+ * <p>Instances are created per-user via
+ * {@link CoinbaseClientFactory#getClientForUser(String)} and are <b>not</b>
+ * registered as Spring singleton beans to maintain user isolation.</p>
  */
-@Component
-@Lazy
 @Slf4j
 public class CoinbasePublicServiceImpl extends PublicServiceImpl {
 
