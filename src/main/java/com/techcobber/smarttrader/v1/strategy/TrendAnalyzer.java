@@ -98,7 +98,7 @@ public class TrendAnalyzer {
 					bullishSignals, bearishSignals);
 		}
 
-		log.info("Trend analysis: {} (strength: {:.2f}) — {}", direction, strength, description);
+		log.info("Trend analysis: {} (strength: {}) — {}", direction, String.format("%.2f", strength), description);
 		return new TrendResult(direction, strength, description);
 	}
 

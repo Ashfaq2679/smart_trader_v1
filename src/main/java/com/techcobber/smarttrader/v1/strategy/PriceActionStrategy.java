@@ -84,15 +84,15 @@ public class PriceActionStrategy implements TradingStrategy {
 				.min(Double::compareTo)
 				.orElse(null);
 
-		log.info("Current price: {:.2f} | Nearest support: {} | Nearest resistance: {}",
-				currentPrice,
+		log.info("Current price: {} | Nearest support: {} | Nearest resistance: {}",
+				String.format("%.2f", currentPrice),
 				nearestSupport != null ? String.format("%.2f", nearestSupport) : "none",
 				nearestResistance != null ? String.format("%.2f", nearestResistance) : "none");
 
 		// Step 2: Trend Analysis
 		log.info("--- Step 2: Trend Analysis ---");
 		TrendResult trend = trendAnalyzer.analyzeTrend(candles, TREND_LOOKBACK);
-		log.info("Trend analysis: {} (strength: {:.2f})", trend.getDirection(), trend.getStrength());
+		log.info("Trend analysis: {} (strength: {})", trend.getDirection(), String.format("%.2f", trend.getStrength()));
 
 		// Step 3: Candle Pattern Detection
 		log.info("--- Step 3: Candle Pattern Detection ---");
@@ -129,8 +129,8 @@ public class PriceActionStrategy implements TradingStrategy {
 		String reasoning = buildReasoning(signal, trend, detectedPatterns,
 				currentPrice, nearestSupport, nearestResistance);
 
-		log.info("=== Signal: {} | Confidence: {:.2f} | Patterns: {} | Reasoning: {} ===",
-				signal, confidence, patternNames, reasoning);
+		log.info("=== Signal: {} | Confidence: {} | Patterns: {} | Reasoning: {} ===",
+				signal, String.format("%.2f", confidence), patternNames, reasoning);
 
 		return TradeDecision.builder()
 				.signal(signal)
@@ -157,7 +157,7 @@ public class PriceActionStrategy implements TradingStrategy {
 			double resistanceTolerance = nearestResistance * 0.002;
 			breakoutAbove = currentPrice > nearestResistance + resistanceTolerance;
 			if (breakoutAbove) {
-				log.info("Breakout detected: price {:.2f} above resistance {:.2f}", currentPrice, nearestResistance);
+				log.info("Breakout detected: price {} above resistance {}", String.format("%.2f", currentPrice), String.format("%.2f", nearestResistance));
 			}
 		}
 
@@ -167,7 +167,7 @@ public class PriceActionStrategy implements TradingStrategy {
 			double supportTolerance = nearestSupport * 0.002;
 			breakdownBelow = currentPrice < nearestSupport - supportTolerance;
 			if (breakdownBelow) {
-				log.info("Breakdown detected: price {:.2f} below support {:.2f}", currentPrice, nearestSupport);
+				log.info("Breakdown detected: price {} below support {}", String.format("%.2f", currentPrice), String.format("%.2f", nearestSupport));
 			}
 		}
 
@@ -177,7 +177,7 @@ public class PriceActionStrategy implements TradingStrategy {
 			double proximity = Math.abs(currentPrice - nearestResistance) / nearestResistance;
 			rejectedAtResistance = proximity < 0.005 && bearishCount > 0;
 			if (rejectedAtResistance) {
-				log.info("Rejection at resistance {:.2f} with bearish patterns", nearestResistance);
+				log.info("Rejection at resistance {} with bearish patterns", String.format("%.2f", nearestResistance));
 			}
 		}
 
@@ -187,7 +187,7 @@ public class PriceActionStrategy implements TradingStrategy {
 			double proximity = Math.abs(currentPrice - nearestSupport) / nearestSupport;
 			bouncedAtSupport = proximity < 0.005 && bullishCount > 0;
 			if (bouncedAtSupport) {
-				log.info("Bounce at support {:.2f} with bullish patterns", nearestSupport);
+				log.info("Bounce at support {} with bullish patterns", String.format("%.2f", nearestSupport));
 			}
 		}
 
@@ -242,7 +242,7 @@ public class PriceActionStrategy implements TradingStrategy {
 				|| (signal == Signal.SELL && trend.getDirection() == TrendDirection.DOWN);
 		if (trendAligned) {
 			confidence += 0.2 * trend.getStrength();
-			log.debug("Trend alignment bonus: +{:.2f}", 0.2 * trend.getStrength());
+			log.debug("Trend alignment bonus: +{}", String.format("%.2f", 0.2 * trend.getStrength()));
 		}
 
 		// Pattern strength bonus
@@ -283,8 +283,8 @@ public class PriceActionStrategy implements TradingStrategy {
 		}
 
 		confidence = Math.min(1.0, Math.max(0.0, confidence));
-		log.info("Confidence calculation: {:.2f} (trend-aligned: {}, relevant-patterns: {}, strong-pattern: {})",
-				confidence, trendAligned, relevantPatterns, hasStrongPattern);
+		log.info("Confidence calculation: {} (trend-aligned: {}, relevant-patterns: {}, strong-pattern: {})",
+				String.format("%.2f", confidence), trendAligned, relevantPatterns, hasStrongPattern);
 		return Math.round(confidence * 100.0) / 100.0;
 	}
 

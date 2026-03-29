@@ -65,8 +65,8 @@ public class SupportResistanceDetector {
 		levels.sort((a, b) -> Double.compare(b.getStrength(), a.getStrength()));
 
 		for (Level level : levels) {
-			log.info("Detected {} level at {:.2f} with strength {}",
-					level.getType(), level.getPrice(), level.getStrength());
+			log.info("Detected {} level at {} with strength {}",
+					level.getType(), String.format("%.2f", level.getPrice()), level.getStrength());
 		}
 
 		return levels;
