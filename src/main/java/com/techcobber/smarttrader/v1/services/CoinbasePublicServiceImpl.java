@@ -197,7 +197,8 @@ public class CoinbasePublicServiceImpl extends PublicServiceImpl {
 		ListProductsResponse response = this.listPublicProducts();
 		if (response != null) {
 			return response.getProducts().stream()
-					.filter(product -> product.getPricePercentageChange24h() != null
+					.filter(product -> product.getProductId().toUpperCase().contains(filter.toUpperCase())
+							&& product.getPricePercentageChange24h() != null
 							&& !product.getPricePercentageChange24h().isEmpty())
 					.sorted((p1, p2) -> Double.compare(Double.parseDouble(p2.getPricePercentageChange24h()),
 							Double.parseDouble(p1.getPricePercentageChange24h())))
@@ -225,7 +226,8 @@ public class CoinbasePublicServiceImpl extends PublicServiceImpl {
 		ListProductsResponse response = this.listPublicProducts();
 		if (response != null) {
 			return response.getProducts().stream()
-					.filter(product -> product.getPricePercentageChange24h() != null
+					.filter(product -> product.getProductId().toUpperCase().contains(filter.toUpperCase())
+							&& product.getPricePercentageChange24h() != null
 							&& !product.getPricePercentageChange24h().isEmpty())
 					.sorted((p1, p2) -> Double.compare(Double.parseDouble(p1.getPricePercentageChange24h()),
 							Double.parseDouble(p2.getPricePercentageChange24h())))
