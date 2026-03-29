@@ -1,60 +1,78 @@
 package com.techcobber.smarttrader.v1.services;
 
+import com.coinbase.advanced.client.CoinbaseAdvancedClient;
 import org.junit.jupiter.api.Test;
-
-import java.lang.reflect.Field;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.*;
 
 /**
- * Unit tests for ClientService using plain JUnit 5 (no Spring context).
- * Reflection is used to access and manipulate the private 'creds' field.
+ * Unit tests for {@link ClientService} using Mockito.
+ * ClientService now delegates to CoinbaseClientFactory for per-user client management.
  */
+@ExtendWith(MockitoExtension.class)
 class ClientServiceTest {
 
+    @Mock
+    private CoinbaseClientFactory coinbaseClientFactory;
+
+    @InjectMocks
+    private ClientService clientService;
+
     @Test
-    void getClient_beforeInit_returnsNull() {
-        // A freshly constructed ClientService should have a null client
-        ClientService service = new ClientService();
-        assertThat(service.getClient()).isNull();
+    void getClientForUser_delegatesToFactory() {
+        CoinbaseAdvancedClient mockClient = mock(CoinbaseAdvancedClient.class);
+        when(coinbaseClientFactory.getClientForUser("user-1")).thenReturn(mockClient);
+
+        CoinbaseAdvancedClient result = clientService.getClientForUser("user-1");
+
+        assertThat(result).isSameAs(mockClient);
+        verify(coinbaseClientFactory).getClientForUser("user-1");
     }
 
     @Test
-    void setCredentials_setsCredentialValue() throws Exception {
-        ClientService service = new ClientService();
-        String testCreds = "test-credential-value";
+    void registerCredentials_delegatesToFactory() {
+        clientService.registerCredentials("user-1", "raw-creds");
 
-        service.setCredentials(testCreds);
-
-        // Use reflection to verify the private 'creds' field was set
-        Field credsField = ClientService.class.getDeclaredField("creds");
-        credsField.setAccessible(true);
-        String actualCreds = (String) credsField.get(service);
-
-        assertThat(actualCreds).isEqualTo(testCreds);
+        verify(coinbaseClientFactory).registerCredentials("user-1", "raw-creds");
     }
 
     @Test
-    void init_withNullCredentials_throwsRuntimeException() throws Exception {
-        ClientService service = new ClientService();
+    void removeCredentials_delegatesToFactory() {
+        clientService.removeCredentials("user-1");
 
-        // Ensure creds is null via reflection
-        Field credsField = ClientService.class.getDeclaredField("creds");
-        credsField.setAccessible(true);
-        credsField.set(service, null);
-
-        assertThatThrownBy(service::init)
-                .isInstanceOf(RuntimeException.class);
+        verify(coinbaseClientFactory).removeCredentials("user-1");
     }
 
     @Test
-    void init_withInvalidCredentials_throwsRuntimeException() {
-        // CoinbaseAdvancedCredentials should fail to parse invalid input
-        ClientService service = new ClientService();
-        service.setCredentials("this-is-not-valid-json-credentials");
+    void hasCredentials_delegatesToFactory() {
+        when(coinbaseClientFactory.hasCredentials("user-1")).thenReturn(true);
 
-        assertThatThrownBy(service::init)
-                .isInstanceOf(RuntimeException.class);
+        assertThat(clientService.hasCredentials("user-1")).isTrue();
+        verify(coinbaseClientFactory).hasCredentials("user-1");
+    }
+
+    @Test
+    void hasCredentials_returnsFalseWhenNoCredentials() {
+        when(coinbaseClientFactory.hasCredentials("unknown")).thenReturn(false);
+
+        assertThat(clientService.hasCredentials("unknown")).isFalse();
+    }
+
+    @Test
+    void differentUsers_getDifferentClients() {
+        CoinbaseAdvancedClient client1 = mock(CoinbaseAdvancedClient.class);
+        CoinbaseAdvancedClient client2 = mock(CoinbaseAdvancedClient.class);
+        when(coinbaseClientFactory.getClientForUser("user-1")).thenReturn(client1);
+        when(coinbaseClientFactory.getClientForUser("user-2")).thenReturn(client2);
+
+        CoinbaseAdvancedClient result1 = clientService.getClientForUser("user-1");
+        CoinbaseAdvancedClient result2 = clientService.getClientForUser("user-2");
+
+        assertThat(result1).isNotSameAs(result2);
     }
 }
