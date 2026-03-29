@@ -1,1 +1,7 @@
 /home/runner/work/smart_trader_v1/smart_trader_v1/src/test/java/com/techcobber/smarttrader/v1/SmartTraderV1ApplicationTests.java
+/home/runner/work/smart_trader_v1/smart_trader_v1/src/test/java/com/techcobber/smarttrader/v1/models/ListCandlesTest.java
+/home/runner/work/smart_trader_v1/smart_trader_v1/src/test/java/com/techcobber/smarttrader/v1/models/MyCandleTest.java
+/home/runner/work/smart_trader_v1/smart_trader_v1/src/test/java/com/techcobber/smarttrader/v1/models/OrderTest.java
+/home/runner/work/smart_trader_v1/smart_trader_v1/src/test/java/com/techcobber/smarttrader/v1/models/UserPreferencesTest.java
+/home/runner/work/smart_trader_v1/smart_trader_v1/src/test/java/com/techcobber/smarttrader/v1/services/ClientServiceTest.java
+/home/runner/work/smart_trader_v1/smart_trader_v1/src/test/java/com/techcobber/smarttrader/v1/services/CoinbasePublicServiceImplTest.java
