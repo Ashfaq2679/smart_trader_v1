@@ -8,6 +8,19 @@ import lombok.Data;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Represents OHLCV candlestick data with pattern detection.
+ *
+ * <p><b>Design Pattern: Builder</b> — The nested {@link Builder} class provides a
+ * fluent API for constructing {@code MyCandle} instances. This separates the
+ * construction of a complex object (with OHLCV values plus derived computed fields)
+ * from its representation, allowing the same construction process to create
+ * different candle configurations. The builder also converts from SDK
+ * {@link com.coinbase.advanced.model.products.Candle} objects via {@code from()}.
+ * {@code computeFields()} is called automatically on {@code build()} to ensure
+ * all derived fields (color, bodySize, wick percentages, candle type classifications)
+ * are initialised.</p>
+ */
 @Data
 public class MyCandle {
 
