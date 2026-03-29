@@ -1,8 +1,0 @@
-/home/runner/work/smart_trader_v1/smart_trader_v1/src/main/java/com/techcobber/smarttrader/v1/SmartTraderV1Application.java
-/home/runner/work/smart_trader_v1/smart_trader_v1/src/main/java/com/techcobber/smarttrader/v1/config/AppConfig.java
-/home/runner/work/smart_trader_v1/smart_trader_v1/src/main/java/com/techcobber/smarttrader/v1/models/ListCandles.java
-/home/runner/work/smart_trader_v1/smart_trader_v1/src/main/java/com/techcobber/smarttrader/v1/models/MyCandle.java
-/home/runner/work/smart_trader_v1/smart_trader_v1/src/main/java/com/techcobber/smarttrader/v1/models/Order.java
-/home/runner/work/smart_trader_v1/smart_trader_v1/src/main/java/com/techcobber/smarttrader/v1/models/UserPreferences.java
-/home/runner/work/smart_trader_v1/smart_trader_v1/src/main/java/com/techcobber/smarttrader/v1/services/ClientService.java
-/home/runner/work/smart_trader_v1/smart_trader_v1/src/main/java/com/techcobber/smarttrader/v1/services/CoinbasePublicServiceImpl.java
