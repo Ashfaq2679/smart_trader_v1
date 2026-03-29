@@ -8,20 +8,9 @@ import com.coinbase.advanced.client.CoinbaseAdvancedClient;
 import com.coinbase.advanced.credentials.CoinbaseAdvancedCredentials;
 
 import jakarta.annotation.PostConstruct;
-import lombok.extern.slf4j.Slf4j;
 
-/**
- * Manages the lifecycle of the Coinbase Advanced API client.
- *
- * <p><b>Design Pattern: Lazy Initialization</b> — The {@code @Lazy} annotation
- * ensures this bean is only created when first requested, deferring the expensive
- * credential parsing and client construction until actually needed.
- * Combined with {@code @PostConstruct}, the client is initialised exactly once
- * after dependency injection completes.</p>
- */
 @Service
 @Lazy
-@Slf4j
 public class ClientService {
 
 	@Value("${ADVANCED_TRADE_CREDENTIALS}")
@@ -38,6 +27,8 @@ public class ClientService {
 	}
 
 	public ClientService() {
+		// This constructor is not used, but it is here to demonstrate that it cannot be
+		// instantiated without credentials.
 	}
 
 	@PostConstruct
@@ -51,7 +42,7 @@ public class ClientService {
 
 			CoinbaseAdvancedCredentials credentials = new CoinbaseAdvancedCredentials(credsStringBlob);
 			this.client = new CoinbaseAdvancedClient(credentials);
-			log.info("Advanced client created successfully. [{}]", client);
+			System.out.println("Advanced client created successfully. [" + client + "]");
 		} catch (Throwable t) {
 			throw new RuntimeException(t.getMessage());
 		}

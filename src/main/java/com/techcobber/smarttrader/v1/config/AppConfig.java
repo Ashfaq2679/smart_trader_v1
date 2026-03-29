@@ -16,14 +16,6 @@ import com.techcobber.smarttrader.v1.services.CoinbasePublicServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * Central Spring configuration for application beans and caching.
- *
- * <p><b>Design Pattern: Factory Method</b> — Each {@code @Bean} method acts as a
- * factory method, encapsulating the creation logic for Coinbase API clients,
- * service instances, and cache infrastructure. Spring invokes these factory
- * methods to produce and manage singleton instances in the application context.</p>
- */
 @Configuration
 @EnableCaching
 @Slf4j

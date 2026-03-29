@@ -20,15 +20,6 @@ import com.techcobber.smarttrader.v1.models.ListCandles;
 
 import lombok.extern.slf4j.Slf4j;
 
-/**
- * Service implementation for Coinbase public market data.
- *
- * <p><b>Design Pattern: Template Method</b> — This class extends {@link PublicServiceImpl}
- * from the Coinbase SDK, inheriting the HTTP request infrastructure (the "template")
- * while overriding/extending behaviour with product-specific query methods.
- * The base class provides the {@code request()} template; this subclass defines
- * the concrete steps (URL construction, response filtering, sorting).</p>
- */
 @Component
 @Lazy
 @Slf4j
@@ -113,13 +104,13 @@ public class CoinbasePublicServiceImpl extends PublicServiceImpl {
 	 *the API.
 	 */
 	public List<Product> getFilteredProducts(String filter) throws CoinbaseAdvancedException {
-		log.info("Fetching products with filter: {}", filter);
+		System.out.println("Fetching products with filter: " + filter);
 		ListProductsResponse response = this.listPublicProducts();
 		if (response != null) {
 			return response.getProducts().stream()
 					.filter(product -> product.getProductId().toUpperCase().contains(filter.toUpperCase())).toList();
 		}
-		log.info("No products found with filter: {}", filter);
+		System.out.println("No products found with filter: " + filter);
 		return List.of();
 	}
 
@@ -157,6 +148,8 @@ public class CoinbasePublicServiceImpl extends PublicServiceImpl {
 					.filter(product -> product.getProductId().toUpperCase().contains(filter.toUpperCase())
 							&& product.getVolumePercentageChange24h() != null
 							&& !product.getVolumePercentageChange24h().isEmpty())
+					.filter(product -> product.getVolumePercentageChange24h() != null
+							&& !product.getVolumePercentageChange24h().isEmpty())
 					.sorted((p1, p2) -> Double.compare(Double.parseDouble(p2.getVolumePercentageChange24h()),
 							Double.parseDouble(p1.getVolumePercentageChange24h())))
 					.limit(limit).toList();
@@ -186,6 +179,8 @@ public class CoinbasePublicServiceImpl extends PublicServiceImpl {
 					.filter(product -> product.getProductId().toUpperCase().contains(filter.toUpperCase())
 							&& product.getVolumePercentageChange24h() != null
 							&& !product.getVolumePercentageChange24h().isEmpty())
+					.filter(product -> product.getVolumePercentageChange24h() != null
+							&& !product.getVolumePercentageChange24h().isEmpty())
 					.sorted((p1, p2) -> Double.compare(Double.parseDouble(p1.getVolumePercentageChange24h()),
 							Double.parseDouble(p2.getVolumePercentageChange24h())))
 					.limit(limit).toList();
@@ -197,8 +192,7 @@ public class CoinbasePublicServiceImpl extends PublicServiceImpl {
 		ListProductsResponse response = this.listPublicProducts();
 		if (response != null) {
 			return response.getProducts().stream()
-					.filter(product -> product.getProductId().toUpperCase().contains(filter.toUpperCase())
-							&& product.getPricePercentageChange24h() != null
+					.filter(product -> product.getPricePercentageChange24h() != null
 							&& !product.getPricePercentageChange24h().isEmpty())
 					.sorted((p1, p2) -> Double.compare(Double.parseDouble(p2.getPricePercentageChange24h()),
 							Double.parseDouble(p1.getPricePercentageChange24h())))
@@ -226,8 +220,7 @@ public class CoinbasePublicServiceImpl extends PublicServiceImpl {
 		ListProductsResponse response = this.listPublicProducts();
 		if (response != null) {
 			return response.getProducts().stream()
-					.filter(product -> product.getProductId().toUpperCase().contains(filter.toUpperCase())
-							&& product.getPricePercentageChange24h() != null
+					.filter(product -> product.getPricePercentageChange24h() != null
 							&& !product.getPricePercentageChange24h().isEmpty())
 					.sorted((p1, p2) -> Double.compare(Double.parseDouble(p1.getPricePercentageChange24h()),
 							Double.parseDouble(p2.getPricePercentageChange24h())))

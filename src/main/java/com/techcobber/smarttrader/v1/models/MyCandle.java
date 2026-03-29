@@ -8,19 +8,6 @@ import lombok.Data;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Represents OHLCV candlestick data with pattern detection.
- *
- * <p><b>Design Pattern: Builder</b> — The nested {@link Builder} class provides a
- * fluent API for constructing {@code MyCandle} instances. This separates the
- * construction of a complex object (with OHLCV values plus derived computed fields)
- * from its representation, allowing the same construction process to create
- * different candle configurations. The builder also converts from SDK
- * {@link com.coinbase.advanced.model.products.Candle} objects via {@code from()}.
- * {@code computeFields()} is called automatically on {@code build()} to ensure
- * all derived fields (color, bodySize, wick percentages, candle type classifications)
- * are initialised.</p>
- */
 @Data
 public class MyCandle {
 
@@ -70,6 +57,7 @@ public class MyCandle {
 	@JsonProperty("volume")
 	private Double volume;
 
+	// Computed fields
 	private String color;
 	private double bodySize;
 	private double upperWickPercent;
@@ -99,11 +87,16 @@ public class MyCandle {
 		return high - low;
 	}
 
+	/**
+	 * Computes color, bodySize, upperWickPercent, lowerWickPercent,
+	 * and single-candle pattern types after OHLCV values are set.
+	 */
 	public void computeFields() {
 		if (open == null || close == null || high == null || low == null) {
 			return;
 		}
 
+		// Color
 		if (close > open) {
 			this.color = "GREEN";
 		} else if (close < open) {
@@ -113,8 +106,11 @@ public class MyCandle {
 		}
 
 		double range = high - low;
+
+		// Body size (absolute)
 		this.bodySize = Math.abs(close - open);
 
+		// Wick percentages relative to total range
 		if (range == 0) {
 			this.upperWickPercent = 0;
 			this.lowerWickPercent = 0;
@@ -125,6 +121,7 @@ public class MyCandle {
 			this.lowerWickPercent = (lowerWick / range) * 100;
 		}
 
+		// Detect single-candle patterns
 		this.candleTypes = detectSingleCandlePatterns();
 	}
 
@@ -143,6 +140,7 @@ public class MyCandle {
 		double upperWickRatio = upperWick / range;
 		double lowerWickRatio = lowerWick / range;
 
+		// Doji variants (very small body)
 		if (bodyRatio < 0.05) {
 			if (lowerWickRatio > 0.7 && upperWickRatio < 0.1) {
 				types.add(CandleType.DRAGONFLY_DOJI);
@@ -154,24 +152,29 @@ public class MyCandle {
 			return types;
 		}
 
+		// Marubozu (very small wicks, large body)
 		if (bodyRatio > 0.9 && upperWickRatio < 0.05 && lowerWickRatio < 0.05) {
 			types.add(isBullish() ? CandleType.MARUBOZU_BULLISH : CandleType.MARUBOZU_BEARISH);
 			return types;
 		}
 
+		// Spinning top (small body, roughly equal wicks)
 		if (bodyRatio < 0.3 && Math.abs(upperWickRatio - lowerWickRatio) < 0.15) {
 			types.add(CandleType.SPINNING_TOP);
 			return types;
 		}
 
+		// Hammer: small body at top, long lower wick (>=2x body), small upper wick
 		if (lowerWick >= bodySize * 2 && upperWickRatio < 0.15 && bodyRatio < 0.35) {
 			types.add(isBullish() ? CandleType.HAMMER : CandleType.HANGING_MAN);
 		}
 
+		// Inverted Hammer / Shooting Star: small body at bottom, long upper wick
 		if (upperWick >= bodySize * 2 && lowerWickRatio < 0.15 && bodyRatio < 0.35) {
 			types.add(isBullish() ? CandleType.INVERTED_HAMMER : CandleType.SHOOTING_STAR);
 		}
 
+		// Default to basic bullish/bearish if no special pattern
 		if (types.isEmpty()) {
 			types.add(isBullish() ? CandleType.BULLISH : (isBearish() ? CandleType.BEARISH : CandleType.NEUTRAL));
 		}
@@ -179,6 +182,17 @@ public class MyCandle {
 		return types;
 	}
 
+	// ========================
+	// Multi-candle pattern detection (static methods)
+	// Call these from strategy or orchestrator level
+	// ========================
+
+	/**
+	 * Detects multi-candle patterns between two adjacent candles.
+	 * @param previous the prior candle
+	 * @param current the current candle
+	 * @return list of detected multi-candle patterns
+	 */
 	public static List<CandleType> detectTwoCandlePatterns(MyCandle previous, MyCandle current) {
 		List<CandleType> patterns = new ArrayList<>();
 		if (previous == null || current == null) {
@@ -188,28 +202,33 @@ public class MyCandle {
 		double prevBody = Math.abs(previous.close - previous.open);
 		double currBody = Math.abs(current.close - current.open);
 
+		// Bullish Engulfing: prev bearish, curr bullish, curr body engulfs prev body
 		if (previous.isBearish() && current.isBullish()
 				&& current.open <= previous.close && current.close >= previous.open) {
 			patterns.add(CandleType.BULLISH_ENGULFING);
 		}
 
+		// Bearish Engulfing: prev bullish, curr bearish, curr body engulfs prev body
 		if (previous.isBullish() && current.isBearish()
 				&& current.open >= previous.close && current.close <= previous.open) {
 			patterns.add(CandleType.BEARISH_ENGULFING);
 		}
 
+		// Bullish Harami: prev bearish large body, curr bullish small body inside prev
 		if (previous.isBearish() && current.isBullish()
 				&& currBody < prevBody
 				&& current.open >= previous.close && current.close <= previous.open) {
 			patterns.add(CandleType.BULLISH_HARAMI);
 		}
 
+		// Bearish Harami: prev bullish large body, curr bearish small body inside prev
 		if (previous.isBullish() && current.isBearish()
 				&& currBody < prevBody
 				&& current.open <= previous.close && current.close >= previous.open) {
 			patterns.add(CandleType.BEARISH_HARAMI);
 		}
 
+		// Piercing Line: prev bearish, curr opens below prev low, closes above prev midpoint
 		double prevMid = (previous.open + previous.close) / 2;
 		if (previous.isBearish() && current.isBullish()
 				&& current.open < previous.low && current.close > prevMid
@@ -217,18 +236,21 @@ public class MyCandle {
 			patterns.add(CandleType.PIERCING_LINE);
 		}
 
+		// Dark Cloud Cover: prev bullish, curr opens above prev high, closes below prev midpoint
 		if (previous.isBullish() && current.isBearish()
 				&& current.open > previous.high && current.close < prevMid
 				&& current.close > previous.open) {
 			patterns.add(CandleType.DARK_CLOUD_COVER);
 		}
 
+		// Tweezer Bottom: both candles have approximately equal lows
 		double tolerance = previous.range() * 0.02;
 		if (Math.abs(previous.low - current.low) <= tolerance
 				&& previous.isBearish() && current.isBullish()) {
 			patterns.add(CandleType.TWEEZER_BOTTOM);
 		}
 
+		// Tweezer Top: both candles have approximately equal highs
 		if (Math.abs(previous.high - current.high) <= tolerance
 				&& previous.isBullish() && current.isBearish()) {
 			patterns.add(CandleType.TWEEZER_TOP);
@@ -237,6 +259,13 @@ public class MyCandle {
 		return patterns;
 	}
 
+	/**
+	 * Detects three-candle patterns.
+	 * @param first the first candle
+	 * @param second the middle candle
+	 * @param third the third candle
+	 * @return list of detected three-candle patterns
+	 */
 	public static List<CandleType> detectThreeCandlePatterns(MyCandle first, MyCandle second, MyCandle third) {
 		List<CandleType> patterns = new ArrayList<>();
 		if (first == null || second == null || third == null) {
@@ -247,22 +276,26 @@ public class MyCandle {
 		double secondRange = second.range();
 		double secondBodyRatio = secondRange > 0 ? secondBody / secondRange : 0;
 
+		// Morning Star: bearish, small-body (star), bullish
 		if (first.isBearish() && secondBodyRatio < 0.3 && third.isBullish()
 				&& second.close < first.close && third.close > (first.open + first.close) / 2) {
 			patterns.add(CandleType.MORNING_STAR);
 		}
 
+		// Evening Star: bullish, small-body (star), bearish
 		if (first.isBullish() && secondBodyRatio < 0.3 && third.isBearish()
 				&& second.close > first.close && third.close < (first.open + first.close) / 2) {
 			patterns.add(CandleType.EVENING_STAR);
 		}
 
+		// Three White Soldiers: three consecutive bullish candles, each closing higher
 		if (first.isBullish() && second.isBullish() && third.isBullish()
 				&& second.close > first.close && third.close > second.close
 				&& second.open > first.open && third.open > second.open) {
 			patterns.add(CandleType.THREE_WHITE_SOLDIERS);
 		}
 
+		// Three Black Crows: three consecutive bearish candles, each closing lower
 		if (first.isBearish() && second.isBearish() && third.isBearish()
 				&& second.close < first.close && third.close < second.close
 				&& second.open < first.open && third.open < second.open) {
