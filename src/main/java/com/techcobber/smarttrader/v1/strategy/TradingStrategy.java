@@ -25,7 +25,7 @@ import com.techcobber.smarttrader.v1.models.MyCandle;
 public interface TradingStrategy {
 
 	/**
-	 * Analyses a list of candles and returns a trading signal.
+	 * Analyzes a list of candles and returns a trading signal.
 	 *
 	 * <p>The candle list must be ordered <b>chronologically</b> (oldest first,
 	 * most-recent last). Implementations may require a minimum number of candles

@@ -90,7 +90,7 @@ public class PriceActionStrategy implements TradingStrategy {
 	}
 
 	/**
-	 * Analyses the given candle history and produces a {@link TradeSignal}.
+	 * Analyzes the given candle history and produces a {@link TradeSignal}.
 	 *
 	 * @param candles chronologically ordered candles (oldest → newest); must not be null
 	 * @return a signal with confidence and a human-readable reason
