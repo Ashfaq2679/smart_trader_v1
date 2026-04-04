@@ -24,7 +24,7 @@ import lombok.extern.slf4j.Slf4j;
  * REST controller for triggering market scans and individual product analysis.
  *
  * <p>Exposes endpoints to manually trigger scans (on-demand), retrieve cached
- * results from the latest scheduled scan, and analyse a specific product.</p>
+ * results from the latest scheduled scan, and analyze a specific product.</p>
  */
 @Slf4j
 @RestController
@@ -72,12 +72,12 @@ public class MarketScanController {
 	}
 
 	/**
-	 * Analyses a specific product using the TradingOrchestrator.
+	 * Analyzes a specific product using the TradingOrchestrator.
 	 *
 	 * <p>Fetches candle data for the given product and runs
 	 * the full trading analysis pipeline.</p>
 	 *
-	 * @param productId the product to analyse (e.g. "BTC-USDC")
+	 * @param productId the product to analyze (e.g. "BTC-USDC")
 	 * @param userId    user whose Coinbase credentials to use
 	 * @return the trade decision
 	 */
