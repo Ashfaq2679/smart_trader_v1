@@ -7,7 +7,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -54,7 +53,7 @@ class UserServiceTest {
 		@DisplayName("Creates a user and sets timestamps")
 		void createsUserSuccessfully() {
 			User input = sampleUser("user-1");
-			when(userRepository.existsByUserId("user-1")).thenReturn(false);
+			when(userRepository.existsById("user-1")).thenReturn(false);
 			when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
 			User result = userService.createUser(input);
@@ -90,7 +89,7 @@ class UserServiceTest {
 		@DisplayName("Throws when user already exists")
 		void throwsWhenUserAlreadyExists() {
 			User input = sampleUser("user-1");
-			when(userRepository.existsByUserId("user-1")).thenReturn(true);
+			when(userRepository.existsById("user-1")).thenReturn(true);
 
 			assertThatThrownBy(() -> userService.createUser(input))
 					.isInstanceOf(IllegalArgumentException.class)
@@ -110,7 +109,7 @@ class UserServiceTest {
 		@DisplayName("Returns user when found")
 		void returnsUserWhenFound() {
 			User user = sampleUser("user-1");
-			when(userRepository.findByUserId("user-1")).thenReturn(Optional.of(user));
+			when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
 
 			Optional<User> result = userService.getUser("user-1");
 
@@ -121,7 +120,7 @@ class UserServiceTest {
 		@Test
 		@DisplayName("Returns empty when not found")
 		void returnsEmptyWhenNotFound() {
-			when(userRepository.findByUserId("unknown")).thenReturn(Optional.empty());
+			when(userRepository.findById("unknown")).thenReturn(Optional.empty());
 
 			Optional<User> result = userService.getUser("unknown");
 
@@ -142,7 +141,7 @@ class UserServiceTest {
 		void updatesMutableFields() {
 			User existing = sampleUser("user-1");
 			existing.setCreatedAt(Instant.now().minusSeconds(3600));
-			when(userRepository.findByUserId("user-1")).thenReturn(Optional.of(existing));
+			when(userRepository.findById("user-1")).thenReturn(Optional.of(existing));
 			when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
 			User updates = new User();
@@ -164,7 +163,7 @@ class UserServiceTest {
 			User existing = sampleUser("user-1");
 			existing.setEmail("original@example.com");
 			existing.setDisplayName("Original Name");
-			when(userRepository.findByUserId("user-1")).thenReturn(Optional.of(existing));
+			when(userRepository.findById("user-1")).thenReturn(Optional.of(existing));
 			when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
 			User updates = new User();
@@ -179,7 +178,7 @@ class UserServiceTest {
 		@Test
 		@DisplayName("Throws when user not found")
 		void throwsWhenUserNotFound() {
-			when(userRepository.findByUserId("unknown")).thenReturn(Optional.empty());
+			when(userRepository.findById("unknown")).thenReturn(Optional.empty());
 
 			assertThatThrownBy(() -> userService.updateUser("unknown", new User()))
 					.isInstanceOf(IllegalArgumentException.class)
@@ -198,17 +197,17 @@ class UserServiceTest {
 		@Test
 		@DisplayName("Deletes when user exists")
 		void deletesWhenExists() {
-			when(userRepository.existsByUserId("user-1")).thenReturn(true);
+			when(userRepository.existsById("user-1")).thenReturn(true);
 
 			userService.deleteUser("user-1");
 
-			verify(userRepository).deleteByUserId("user-1");
+			verify(userRepository).deleteById("user-1");
 		}
 
 		@Test
 		@DisplayName("Throws when user not found")
 		void throwsWhenNotFound() {
-			when(userRepository.existsByUserId("unknown")).thenReturn(false);
+			when(userRepository.existsById("unknown")).thenReturn(false);
 
 			assertThatThrownBy(() -> userService.deleteUser("unknown"))
 					.isInstanceOf(IllegalArgumentException.class)
@@ -227,7 +226,7 @@ class UserServiceTest {
 		@Test
 		@DisplayName("Returns true when user exists")
 		void returnsTrueWhenExists() {
-			when(userRepository.existsByUserId("user-1")).thenReturn(true);
+			when(userRepository.existsById("user-1")).thenReturn(true);
 
 			assertThat(userService.userExists("user-1")).isTrue();
 		}
@@ -235,7 +234,7 @@ class UserServiceTest {
 		@Test
 		@DisplayName("Returns false when user does not exist")
 		void returnsFalseWhenNotExists() {
-			when(userRepository.existsByUserId("unknown")).thenReturn(false);
+			when(userRepository.existsById("unknown")).thenReturn(false);
 
 			assertThat(userService.userExists("unknown")).isFalse();
 		}

@@ -47,7 +47,6 @@ class UserTest {
     void defaultFieldsAreNull() {
         User user = new User();
 
-        assertThat(user.getId()).isNull();
         assertThat(user.getUserId()).isNull();
         assertThat(user.getEmail()).isNull();
         assertThat(user.getDisplayName()).isNull();

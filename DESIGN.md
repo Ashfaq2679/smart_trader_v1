@@ -143,7 +143,7 @@ com.techcobber.smarttrader.v1
 |-------|---------|---------|
 | `MyCandle` | In-memory | OHLCV data with auto-detected candlestick patterns. Builder pattern. Computes body size, wick percentages, colour, and 1/2/3-candle patterns. |
 | `TradeDecision` | In-memory | Immutable signal output: BUY/SELL/HOLD, confidence (0–1), reasoning, detected patterns, trend direction, nearest S/R levels. |
-| `User` | MongoDB | Platform user profile: userId (unique), email, displayName, enabled flag, timestamps. Stored in the `users` collection. |
+| `User` | MongoDB | Platform user profile: userId serves as `@Id` (mapped to MongoDB `_id`), email, displayName, enabled flag, timestamps. Stored in the `users` collection. |
 | `UserPreferences` | MongoDB | Per-user config: strategy name, granularity, asset pair, position size %, max daily loss, timezone, enabled flag. Stored in the `user_preferences` collection. |
 | `UserCredentials` | MongoDB | AES-GCM encrypted Coinbase credential blobs. Unique index on `userId`. |
 | `CoinScanResult` | In-memory | Market scan result with trade decision, profit-potential score (0–100), and summary. |
@@ -327,10 +327,10 @@ Spring `@Configuration` providing Caffeine cache infrastructure:
 
 #### `UserRepository`
 
-Spring Data MongoDB interface for `User`:
-- `findByUserId(String)` — lookup by userId
-- `existsByUserId(String)` — existence check
-- `deleteByUserId(String)` — remove user
+Spring Data MongoDB interface for `User`. Since `userId` is the `@Id` field,
+the built-in `findById`, `existsById`, and `deleteById` methods from
+`MongoRepository` operate directly on the user's unique identifier — no custom
+query methods are needed.
 
 #### `UserPreferencesRepository`
 

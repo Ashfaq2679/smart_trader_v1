@@ -36,7 +36,7 @@ public class UserService {
 		if (user.getUserId() == null || user.getUserId().isBlank()) {
 			throw new IllegalArgumentException("userId must not be blank");
 		}
-		if (userRepository.existsByUserId(user.getUserId())) {
+		if (userRepository.existsById(user.getUserId())) {
 			throw new IllegalArgumentException("User already exists: " + user.getUserId());
 		}
 		Instant now = Instant.now();
@@ -54,7 +54,7 @@ public class UserService {
 	 * @return an Optional containing the user, or empty if not found
 	 */
 	public Optional<User> getUser(String userId) {
-		return userRepository.findByUserId(userId);
+		return userRepository.findById(userId);
 	}
 
 	/**
@@ -66,7 +66,7 @@ public class UserService {
 	 * @throws IllegalArgumentException if the user does not exist
 	 */
 	public User updateUser(String userId, User updates) {
-		User existing = userRepository.findByUserId(userId)
+		User existing = userRepository.findById(userId)
 				.orElseThrow(() -> new IllegalArgumentException("User not found: " + userId));
 
 		if (updates.getEmail() != null) {
@@ -90,10 +90,10 @@ public class UserService {
 	 * @throws IllegalArgumentException if the user does not exist
 	 */
 	public void deleteUser(String userId) {
-		if (!userRepository.existsByUserId(userId)) {
+		if (!userRepository.existsById(userId)) {
 			throw new IllegalArgumentException("User not found: " + userId);
 		}
-		userRepository.deleteByUserId(userId);
+		userRepository.deleteById(userId);
 		log.info("Deleted user [{}]", userId);
 	}
 
@@ -104,6 +104,6 @@ public class UserService {
 	 * @return true if the user exists
 	 */
 	public boolean userExists(String userId) {
-		return userRepository.existsByUserId(userId);
+		return userRepository.existsById(userId);
 	}
 }
