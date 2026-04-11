@@ -15,6 +15,8 @@
 - [Design Patterns](#design-patterns)
 - [Multi-User Architecture](#multi-user-architecture)
 - [Security](#security)
+  - [OAuth 2.0 Resource Server (JWT)](#oauth-20-resource-server-jwt)
+  - [Credential Encryption](#credential-encryption)
 - [Testing](#testing)
 - [Infrastructure](#infrastructure)
 - [Future Plans — Technical Indicators](#future-plans--technical-indicators)
@@ -40,8 +42,9 @@ confidence scores and risk-managed position sizing.
 | Build | Maven |
 | Database | MongoDB 7 (Spring Data) |
 | Cache | Caffeine (Spring Cache) |
+| Security | Spring Security 6 + OAuth 2.0 Resource Server (JWT) |
 | Exchange SDK | Coinbase Advanced SDK 0.1.0 / Core 1.0.1 |
-| Testing | JUnit 5 + Mockito + AssertJ |
+| Testing | JUnit 5 + Mockito + AssertJ + Spring Security Test |
 | Code Gen | Lombok |
 | Container | Docker (multi-stage), Docker Compose |
 
@@ -54,6 +57,13 @@ confidence scores and risk-managed position sizing.
 │                      Spring Boot App                     │
 ├──────────────────────────────────────────────────────────┤
 │                                                          │
+│  ┌────────── OAuth 2.0 Security (JWT) ────────────────┐  │
+│  │ SecurityConfig → SecurityFilterChain                │  │
+│  │   • /api/** — authenticated (Bearer JWT)            │  │
+│  │   • /actuator/health — public (health checks)       │  │
+│  │   • Token validation via JWKS URI                   │  │
+│  └──────────────────────┬─────────────────────────────┘  │
+│                          │ (authenticated requests only)  │
 │  ┌────────────────────── REST Controllers ─────────────┐ │
 │  │ UserController          /api/users                  │ │
 │  │ UserPreferencesCtrl     /api/users/{id}/preferences │ │
@@ -82,6 +92,7 @@ confidence scores and risk-managed position sizing.
 │  MongoDB (users, user_preferences, user_credentials,     │
 │           orders)                                        │
 │  Coinbase Advanced Trade API                             │
+│  External OAuth 2.0 Authorization Server (JWT issuer)    │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -93,6 +104,7 @@ confidence scores and risk-managed position sizing.
 com.techcobber.smarttrader.v1
 ├── config/
 │   ├── AppConfig.java               # Caffeine cache beans
+│   ├── SecurityConfig.java          # OAuth 2.0 resource server (JWT)
 │   └── SchedulingConfig.java        # @EnableScheduling
 ├── controllers/
 │   ├── UserController.java          # REST CRUD for users (/api/users)
@@ -319,6 +331,16 @@ Extends Coinbase SDK `PublicServiceImpl` (Template Method pattern). Provides:
 
 ### Configuration & Repository
 
+#### `SecurityConfig`
+
+OAuth 2.0 Resource Server configuration:
+- `securityFilterChain()` — Stateless session policy, JWT-based authentication
+- `/api/**` — requires a valid Bearer JWT
+- `/actuator/health` — permitted without authentication (health checks)
+- All other paths — denied
+- CSRF disabled (stateless API)
+- Token validation via JWKS URI (`spring.security.oauth2.resourceserver.jwt.jwk-set-uri`)
+
 #### `AppConfig`
 
 Spring `@Configuration` providing Caffeine cache infrastructure:
@@ -358,6 +380,7 @@ Spring Data MongoDB interface:
 | **Factory + Cache-Aside** | `CoinbaseClientFactory` | Per-user client creation with caching |
 | **Façade** | `ClientService` | Simplified API over factory internals |
 | **Factory Method** | `AppConfig` `@Bean` methods | Managed bean creation |
+| **Filter Chain** | `SecurityConfig` / `SecurityFilterChain` | OAuth 2.0 JWT authentication pipeline |
 
 ---
 
@@ -385,6 +408,22 @@ User B ──getClientForUser("B")──▶ └───────────
 
 ## Security
 
+### OAuth 2.0 Resource Server (JWT)
+
+The application acts as an **OAuth 2.0 Resource Server**. Every request to `/api/**`
+must include a valid JWT Bearer token in the `Authorization` header. The token is
+validated against the authorization server's JSON Web Key Set (JWKS) endpoint.
+
+| Concern | Approach |
+|---------|----------|
+| Authentication | OAuth 2.0 Bearer JWT tokens validated via JWKS URI |
+| Session management | Stateless — no server-side sessions |
+| CSRF | Disabled (stateless API with Bearer tokens) |
+| Public endpoints | `/actuator/health` only (for container health checks) |
+| Default deny | All non-API, non-health paths are denied |
+
+### Credential Encryption
+
 | Concern | Approach |
 |---------|----------|
 | Credentials at rest | AES-256-GCM encrypted in MongoDB |
@@ -398,9 +437,9 @@ User B ──getClientForUser("B")──▶ └───────────
 
 ## Testing
 
-- **Framework**: JUnit 5 + Mockito + AssertJ (no `@SpringBootTest`)
+- **Framework**: JUnit 5 + Mockito + AssertJ + Spring Security Test (no `@SpringBootTest`)
 - **Run**: `mvn test -Dtest='!SmartTraderV1ApplicationTests'`
-- **Total**: 305 tests across 25 test files
+- **Total**: 309 tests across 26 test files
 
 | Area | Test File | Tests |
 |------|-----------|-------|
@@ -429,6 +468,7 @@ User B ──getClientForUser("B")──▶ └───────────
 | Controllers | `UserPreferencesControllerTest` | 8 (get, save, delete, error handling) |
 | Controllers | `CredentialControllerTest` | 8 (register, check, remove, errors) |
 | Controllers | `MarketScanControllerTest` | 8 (scan, results, analyze, errors) |
+| Config | `SecurityConfigTest` | 4 (instantiation, annotations, bean) |
 
 ---
 
@@ -445,6 +485,7 @@ services:
 **Environment variables**:
 - `SPRING_DATA_MONGODB_URI` — MongoDB connection string
 - `CREDENTIAL_ENCRYPTION_KEY` — Base64 AES-256 key for credential encryption
+- `OAUTH2_JWK_SET_URI` — JWKS endpoint of the OAuth 2.0 authorization server
 
 ### Dockerfile
 
