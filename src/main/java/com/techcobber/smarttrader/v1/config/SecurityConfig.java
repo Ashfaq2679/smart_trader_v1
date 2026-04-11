@@ -28,7 +28,11 @@ public class SecurityConfig {
 	@Bean
 	SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 		http
-			.csrf(csrf -> csrf.disable())
+			// CSRF protection is disabled because this is a stateless REST API
+			// that uses Bearer JWT tokens (not cookies) for authentication.
+			// Bearer tokens are not automatically attached by browsers, so they
+			// are not susceptible to CSRF attacks.
+			.csrf(csrf -> csrf.disable()) // lgtm[java/spring-disabled-csrf-protection]
 			.sessionManagement(session ->
 				session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 			.authorizeHttpRequests(auth -> auth
@@ -36,7 +40,10 @@ public class SecurityConfig {
 				.requestMatchers("/api/**").authenticated()
 				.anyRequest().denyAll())
 			.oauth2ResourceServer(oauth2 ->
-				oauth2.jwt(jwt -> {}));
+				oauth2.jwt(jwt -> {
+					// Uses default JWT decoder configured via
+					// spring.security.oauth2.resourceserver.jwt.jwk-set-uri
+				}));
 
 		return http.build();
 	}
