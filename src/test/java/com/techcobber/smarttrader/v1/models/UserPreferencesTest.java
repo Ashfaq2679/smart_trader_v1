@@ -1,5 +1,7 @@
 package com.techcobber.smarttrader.v1.models;
 
+import java.time.Instant;
+
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -13,7 +15,9 @@ class UserPreferencesTest {
     @Test
     void gettersAndSetters_allFields() {
         UserPreferences prefs = new UserPreferences();
+        Instant now = Instant.parse("2025-01-15T10:30:00Z");
 
+        prefs.setId("pref-id-1");
         prefs.setUserId("user-456");
         prefs.setStrategy("momentum");
         prefs.setGranularity("ONE_HOUR");
@@ -23,8 +27,9 @@ class UserPreferencesTest {
         prefs.setMaxDailyLoss("500");
         prefs.setTimezone("America/New_York");
         prefs.setEnabled(true);
-        prefs.setUpdatedAt("2025-01-15T10:30:00Z");
+        prefs.setUpdatedAt(now);
 
+        assertThat(prefs.getId()).isEqualTo("pref-id-1");
         assertThat(prefs.getUserId()).isEqualTo("user-456");
         assertThat(prefs.getStrategy()).isEqualTo("momentum");
         assertThat(prefs.getGranularity()).isEqualTo("ONE_HOUR");
@@ -34,7 +39,7 @@ class UserPreferencesTest {
         assertThat(prefs.getMaxDailyLoss()).isEqualTo("500");
         assertThat(prefs.getTimezone()).isEqualTo("America/New_York");
         assertThat(prefs.isEnabled()).isTrue();
-        assertThat(prefs.getUpdatedAt()).isEqualTo("2025-01-15T10:30:00Z");
+        assertThat(prefs.getUpdatedAt()).isEqualTo(now);
     }
 
     @Test

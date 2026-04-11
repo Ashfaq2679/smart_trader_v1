@@ -8,6 +8,7 @@
 - [Package Structure](#package-structure)
 - [Component Details](#component-details)
   - [Models](#models)
+  - [Controller Layer](#controller-layer-rest-api)
   - [Strategy Layer](#strategy-layer)
   - [Service Layer](#service-layer)
   - [Configuration & Repository](#configuration--repository)
@@ -49,47 +50,39 @@ confidence scores and risk-managed position sizing.
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                   Spring Boot App                    │
-├──────────────────────────────────────────────────────┤
-│                                                      │
-│  ┌─────────────┐   ┌──────────────────────────────┐  │
-│  │  AppConfig   │   │     TradingOrchestrator      │  │
-│  │  (Caching)   │   │  executeAnalysis()           │  │
-│  └─────────────┘   │  executeWithRisk()            │  │
-│                     └──────────┬───────────────────┘  │
-│                                │                      │
-│            ┌───────────────────┼───────────────┐      │
-│            ▼                   ▼               ▼      │
-│  ┌─────────────────┐ ┌──────────────┐ ┌────────────┐ │
-│  │PriceAction      │ │ TrendAnalyzer│ │RiskManager │ │
-│  │Strategy         │ └──────────────┘ └────────────┘ │
-│  │ (TradingStrategy│ ┌──────────────┐                │
-│  │  interface)     │ │CandlePattern │                │
-│  └─────────────────┘ │Detector      │                │
-│                      └──────────────┘                │
-│                      ┌──────────────┐                │
-│                      │Support/Resist│                │
-│                      │Detector      │                │
-│                      └──────────────┘                │
-│                                                      │
-│  ┌─────────────┐   ┌──────────────────────────────┐  │
-│  │ClientService │──▶│  CoinbaseClientFactory       │  │
-│  │ (Façade)     │   │  Per-user client cache       │  │
-│  └─────────────┘   └──────────┬───────────────────┘  │
-│                                │                      │
-│            ┌───────────────────┼───────────────┐      │
-│            ▼                   ▼               ▼      │
-│  ┌─────────────────┐ ┌──────────────┐ ┌────────────┐ │
-│  │Credential       │ │UserCredentials│ │Coinbase    │ │
-│  │EncryptionService│ │Repository    │ │PublicService│ │
-│  │ (AES-GCM)       │ │ (MongoDB)    │ │Impl        │ │
-│  └─────────────────┘ └──────────────┘ └────────────┘ │
-│                                                      │
-├──────────────────────────────────────────────────────┤
-│  MongoDB (user_credentials, orders)                  │
-│  Coinbase Advanced Trade API                         │
-└──────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                      Spring Boot App                     │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│  ┌────────────────────── REST Controllers ─────────────┐ │
+│  │ UserController          /api/users                  │ │
+│  │ UserPreferencesCtrl     /api/users/{id}/preferences │ │
+│  │ CredentialController    /api/credentials             │ │
+│  │ MarketScanController    /api/scanner                 │ │
+│  └──────────────────────────┬──────────────────────────┘ │
+│                              │                           │
+│  ┌───────────── Service Layer ──────────────────────┐    │
+│  │ UserService           UserPreferencesService     │    │
+│  │ ClientService ──▶ CoinbaseClientFactory          │    │
+│  │ TradingOrchestrator   MarketScannerService       │    │
+│  │ CredentialEncryptionService   CoinbasePublicSvc  │    │
+│  └──────────────────────┬───────────────────────────┘    │
+│                          │                               │
+│  ┌───────── Strategy Layer ─────────────────────────┐    │
+│  │ PriceActionStrategy  TrendAnalyzer  RiskManager  │    │
+│  │ CandlePatternDetector  SupportResistanceDetector │    │
+│  └──────────────────────────────────────────────────┘    │
+│                                                          │
+│  ┌───────── Repository Layer ───────────────────────┐    │
+│  │ UserRepository  UserPreferencesRepository        │    │
+│  │ UserCredentialsRepository                        │    │
+│  └──────────────────────────────────────────────────┘    │
+│                                                          │
+├──────────────────────────────────────────────────────────┤
+│  MongoDB (users, user_preferences, user_credentials,     │
+│           orders)                                        │
+│  Coinbase Advanced Trade API                             │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -99,21 +92,36 @@ confidence scores and risk-managed position sizing.
 ```
 com.techcobber.smarttrader.v1
 ├── config/
-│   └── AppConfig.java               # Caffeine cache beans
+│   ├── AppConfig.java               # Caffeine cache beans
+│   └── SchedulingConfig.java        # @EnableScheduling
+├── controllers/
+│   ├── UserController.java          # REST CRUD for users (/api/users)
+│   ├── UserPreferencesController.java # REST CRUD for preferences (/api/users/{id}/preferences)
+│   ├── CredentialController.java    # REST credential management (/api/credentials)
+│   └── MarketScanController.java    # REST scan & analysis (/api/scanner)
 ├── models/
 │   ├── MyCandle.java                 # OHLCV candle with pattern detection (Builder)
 │   ├── TradeDecision.java            # BUY/SELL/HOLD signal + confidence (Builder)
-│   ├── UserPreferences.java          # Per-user trading configuration
+│   ├── User.java                     # User profile document (MongoDB)
+│   ├── UserPreferences.java          # Per-user trading configuration (MongoDB)
 │   ├── UserCredentials.java          # Encrypted credential document (MongoDB)
+│   ├── CoinScanResult.java           # Market scan result with profit-potential score
 │   ├── Order.java                    # Trade execution record (MongoDB)
 │   └── ListCandles.java              # Candle list wrapper for JSON deserialization
 ├── repositories/
+│   ├── UserRepository.java           # MongoDB CRUD for User
+│   ├── UserPreferencesRepository.java # MongoDB CRUD for UserPreferences
 │   └── UserCredentialsRepository.java # MongoDB CRUD for UserCredentials
+├── scheduler/
+│   └── MarketScanScheduler.java      # @Scheduled hourly market scans
 ├── services/
+│   ├── UserService.java              # User lifecycle management
+│   ├── UserPreferencesService.java   # Preferences CRUD logic
 │   ├── ClientService.java            # Façade over CoinbaseClientFactory
 │   ├── CoinbaseClientFactory.java    # Per-user client creation + Caffeine cache
 │   ├── CredentialEncryptionService.java # AES-256-GCM encrypt/decrypt
 │   ├── CoinbasePublicServiceImpl.java   # Market data (extends SDK PublicServiceImpl)
+│   ├── MarketScannerService.java     # USDC-paired coin scanning + ranking
 │   └── TradingOrchestrator.java      # Analysis orchestration + risk management
 ├── strategy/
 │   ├── TradingStrategy.java          # Strategy interface (analyze, getName)
@@ -135,10 +143,47 @@ com.techcobber.smarttrader.v1
 |-------|---------|---------|
 | `MyCandle` | In-memory | OHLCV data with auto-detected candlestick patterns. Builder pattern. Computes body size, wick percentages, colour, and 1/2/3-candle patterns. |
 | `TradeDecision` | In-memory | Immutable signal output: BUY/SELL/HOLD, confidence (0–1), reasoning, detected patterns, trend direction, nearest S/R levels. |
-| `UserPreferences` | MongoDB | Per-user config: strategy name, granularity, asset pair, position size %, max daily loss, timezone, enabled flag. |
+| `User` | MongoDB | Platform user profile: userId (unique), email, displayName, enabled flag, timestamps. Stored in the `users` collection. |
+| `UserPreferences` | MongoDB | Per-user config: strategy name, granularity, asset pair, position size %, max daily loss, timezone, enabled flag. Stored in the `user_preferences` collection. |
 | `UserCredentials` | MongoDB | AES-GCM encrypted Coinbase credential blobs. Unique index on `userId`. |
+| `CoinScanResult` | In-memory | Market scan result with trade decision, profit-potential score (0–100), and summary. |
 | `Order` | MongoDB | Trade execution records: userId, timestamp, product, price, qty, side, decision factors. |
 | `ListCandles` | In-memory | JSON deserialization wrapper for Coinbase candle responses. |
+
+### Controller Layer (REST API)
+
+#### `UserController` — `/api/users`
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/users` | Create a new user (201 on success, 409 if duplicate) |
+| `GET` | `/api/users/{userId}` | Retrieve a user by userId (404 if not found) |
+| `PUT` | `/api/users/{userId}` | Update user fields (email, displayName, enabled) |
+| `DELETE` | `/api/users/{userId}` | Delete a user |
+
+#### `UserPreferencesController` — `/api/users/{userId}/preferences`
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/users/{userId}/preferences` | Retrieve preferences for a user |
+| `PUT` | `/api/users/{userId}/preferences` | Create or update preferences (upsert) |
+| `DELETE` | `/api/users/{userId}/preferences` | Delete (reset) preferences |
+
+#### `CredentialController` — `/api/credentials`
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/credentials/{userId}` | Register or update Coinbase credentials |
+| `GET` | `/api/credentials/{userId}/exists` | Check whether credentials exist |
+| `DELETE` | `/api/credentials/{userId}` | Remove stored credentials |
+
+#### `MarketScanController` — `/api/scanner`
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/scanner/scan` | Trigger an on-demand market scan |
+| `GET` | `/api/scanner/results` | Retrieve cached results from the latest scan |
+| `GET` | `/api/scanner/analyze/{productId}` | Analyze a specific product |
 
 ### Strategy Layer
 
@@ -202,6 +247,28 @@ Position sizing and trade validation:
 
 ### Service Layer
 
+#### `UserService`
+
+User lifecycle management.
+
+| Method | Description |
+|--------|-------------|
+| `createUser(user)` | Creates a new user (validates unique userId, sets timestamps) |
+| `getUser(userId)` | Retrieves a user by userId |
+| `updateUser(userId, updates)` | Updates mutable fields (email, displayName, enabled) |
+| `deleteUser(userId)` | Deletes a user |
+| `userExists(userId)` | Checks whether a user exists |
+
+#### `UserPreferencesService`
+
+Per-user trading preference management.
+
+| Method | Description |
+|--------|-------------|
+| `getPreferences(userId)` | Retrieves preferences for a user |
+| `savePreferences(userId, updates)` | Creates or updates preferences (upsert semantics) |
+| `deletePreferences(userId)` | Deletes preferences for a user |
+
 #### `TradingOrchestrator`
 
 Central orchestration service.
@@ -257,6 +324,20 @@ Extends Coinbase SDK `PublicServiceImpl` (Template Method pattern). Provides:
 Spring `@Configuration` providing Caffeine cache infrastructure:
 - `caffeineConfig()` — 5-minute TTL, 1000-entry max
 - `cacheManager()` — Spring `CaffeineCacheManager`
+
+#### `UserRepository`
+
+Spring Data MongoDB interface for `User`:
+- `findByUserId(String)` — lookup by userId
+- `existsByUserId(String)` — existence check
+- `deleteByUserId(String)` — remove user
+
+#### `UserPreferencesRepository`
+
+Spring Data MongoDB interface for `UserPreferences`:
+- `findByUserId(String)` — lookup by userId
+- `existsByUserId(String)` — existence check
+- `deleteByUserId(String)` — remove preferences
 
 #### `UserCredentialsRepository`
 
@@ -319,26 +400,35 @@ User B ──getClientForUser("B")──▶ └───────────
 
 - **Framework**: JUnit 5 + Mockito + AssertJ (no `@SpringBootTest`)
 - **Run**: `mvn test -Dtest='!SmartTraderV1ApplicationTests'`
-- **Total**: 189 tests across 18 test files
+- **Total**: 305 tests across 25 test files
 
 | Area | Test File | Tests |
 |------|-----------|-------|
 | Models | `MyCandleTest` | 41 (patterns, builder, computed fields) |
 | Models | `TradeDecisionTest` | 9 (builder, enum, equals) |
+| Models | `UserTest` | 8 (getters, setters, equals, toString) |
 | Models | `UserPreferencesTest` | 4 |
 | Models | `OrderTest` | 4 |
 | Models | `ListCandlesTest` | 3 |
 | Models | `UserCredentialsTest` | 4 |
+| Models | `CoinScanResultTest` | 17 (score calculation, builder, summary) |
 | Strategy | `PriceActionStrategyTest` | 14 (buy/sell/hold signals, confidence) |
 | Strategy | `CandlePatternDetectorTest` | 20 (1/2/3-candle, bias, edge cases) |
 | Strategy | `SupportResistanceDetectorTest` | 9 (levels, grouping, strength) |
 | Strategy | `TrendAnalyzerTest` | 9 (up/down/sideways, strength) |
 | Strategy | `RiskManagerTest` | 12 (position, SL/TP, daily loss) |
+| Services | `UserServiceTest` | 11 (create, get, update, delete, exists) |
+| Services | `UserPreferencesServiceTest` | 8 (get, save/upsert, delete) |
 | Services | `CoinbasePublicServiceImplTest` | 25 (filtering, sorting, caching) |
 | Services | `TradingOrchestratorTest` | 9 (analysis, risk integration) |
 | Services | `ClientServiceTest` | 6 (delegation to factory) |
 | Services | `CoinbaseClientFactoryTest` | 11 (register, build, remove, cache) |
 | Services | `CredentialEncryptionServiceTest` | 9 (round-trip, IV uniqueness, tamper) |
+| Services | `MarketScannerServiceTest` | 14 (scanning, ranking, filtering) |
+| Controllers | `UserControllerTest` | 11 (CRUD, error handling, 404/409/500) |
+| Controllers | `UserPreferencesControllerTest` | 8 (get, save, delete, error handling) |
+| Controllers | `CredentialControllerTest` | 8 (register, check, remove, errors) |
+| Controllers | `MarketScanControllerTest` | 8 (scan, results, analyze, errors) |
 
 ---
 
@@ -450,7 +540,7 @@ Map<String, Map<String, String>> indicatorParams;  // e.g., {"RSI": {"period": "
 
 ### Phase 1 — Core Platform
 
-- [ ] REST API controllers for credential management, analysis triggers, and order history
+- [x] REST API controllers for user management, preferences, credential management, analysis triggers
 - [ ] Scheduled trading — cron-based analysis runs per user
 - [ ] Order execution — place real trades via Coinbase Advanced Trade API
 - [ ] WebSocket price feeds — real-time candle updates
