@@ -6,6 +6,7 @@ services:
     environment:
       - SPRING_DATA_MONGODB_URI=mongodb://mongo:27017/smart-trader
       - CREDENTIAL_ENCRYPTION_KEY=${CREDENTIAL_ENCRYPTION_KEY}
+      - OAUTH2_JWK_SET_URI=${OAUTH2_JWK_SET_URI}
     depends_on:
       mongo:
         condition: service_healthy
