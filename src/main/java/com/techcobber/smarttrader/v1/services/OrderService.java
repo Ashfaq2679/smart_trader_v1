@@ -28,6 +28,7 @@ import com.techcobber.smarttrader.v1.models.OrderRequest;
 import com.techcobber.smarttrader.v1.models.OrderResponse;
 import com.techcobber.smarttrader.v1.repositories.OrderRepository;
 
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -51,6 +52,7 @@ public class OrderService {
 	 * @param request order parameters
 	 * @return an {@link OrderResponse} describing the outcome
 	 */
+	@CircuitBreaker(name = "orderService")
 	public OrderResponse placeOrder(String userId, OrderRequest request) {
 		validateOrderRequest(request);
 

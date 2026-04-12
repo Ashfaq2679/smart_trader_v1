@@ -68,34 +68,29 @@ class CredentialEncryptionServiceTest {
     }
 
     @Nested
-    @DisplayName("missing key")
+    @DisplayName("missing key — fail-fast")
     class MissingKey {
 
         @Test
-        @DisplayName("encrypt throws when key is not configured (null)")
-        void encrypt_throwsWhenKeyIsNull() {
-            CredentialEncryptionService service = new CredentialEncryptionService(null);
-
-            assertThatThrownBy(() -> service.encrypt("data"))
+        @DisplayName("constructor throws when key is null")
+        void constructor_throwsWhenKeyIsNull() {
+            assertThatThrownBy(() -> new CredentialEncryptionService(null))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("CREDENTIAL_ENCRYPTION_KEY");
         }
 
         @Test
-        @DisplayName("encrypt throws when key is blank")
-        void encrypt_throwsWhenKeyIsBlank() {
-            CredentialEncryptionService service = new CredentialEncryptionService("  ");
-
-            assertThatThrownBy(() -> service.encrypt("data"))
-                    .isInstanceOf(IllegalStateException.class);
+        @DisplayName("constructor throws when key is blank")
+        void constructor_throwsWhenKeyIsBlank() {
+            assertThatThrownBy(() -> new CredentialEncryptionService("  "))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("CREDENTIAL_ENCRYPTION_KEY");
         }
 
         @Test
-        @DisplayName("decrypt throws when key is not configured")
-        void decrypt_throwsWhenKeyIsNull() {
-            CredentialEncryptionService service = new CredentialEncryptionService(null);
-
-            assertThatThrownBy(() -> service.decrypt("data"))
+        @DisplayName("constructor throws when key is empty string")
+        void constructor_throwsWhenKeyIsEmpty() {
+            assertThatThrownBy(() -> new CredentialEncryptionService(""))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("CREDENTIAL_ENCRYPTION_KEY");
         }

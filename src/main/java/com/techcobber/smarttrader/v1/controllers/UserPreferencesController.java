@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.techcobber.smarttrader.v1.models.UserPreferences;
 import com.techcobber.smarttrader.v1.services.UserPreferencesService;
 
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -39,6 +40,7 @@ public class UserPreferencesController {
 	 * @return the preferences or 404 if none are stored
 	 */
 	@GetMapping
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> getPreferences(@PathVariable String userId) {
 		return preferencesService.getPreferences(userId)
 				.<ResponseEntity<?>>map(ResponseEntity::ok)
@@ -54,6 +56,7 @@ public class UserPreferencesController {
 	 * @return the saved preferences
 	 */
 	@PutMapping
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> savePreferences(
 			@PathVariable String userId,
 			@RequestBody UserPreferences updates) {
@@ -75,6 +78,7 @@ public class UserPreferencesController {
 	 * @return 200 on success or 404 if no preferences exist
 	 */
 	@DeleteMapping
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> deletePreferences(@PathVariable String userId) {
 		try {
 			preferencesService.deletePreferences(userId);

@@ -2,6 +2,7 @@ package com.techcobber.smarttrader.v1.exceptions;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -18,6 +19,10 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
+import io.github.resilience4j.ratelimiter.RateLimiter;
+import io.github.resilience4j.ratelimiter.RateLimiterConfig;
 
 /**
  * Unit tests for {@link GlobalExceptionHandler}.
@@ -155,6 +160,33 @@ class GlobalExceptionHandlerTest {
 
 			assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
 			assertThat(response.getBody().get("message")).isEqualTo("productId is required");
+		}
+	}
+
+	// =======================================================================
+	// RequestNotPermitted (rate limiting)
+	// =======================================================================
+
+	@Nested
+	@DisplayName("handleRateLimitExceeded")
+	class RateLimitTests {
+
+		@Test
+		@DisplayName("Returns 429 Too Many Requests")
+		void returnsTooManyRequests() {
+			RateLimiterConfig config = RateLimiterConfig.custom()
+					.limitForPeriod(1)
+					.limitRefreshPeriod(Duration.ofSeconds(1))
+					.timeoutDuration(Duration.ZERO)
+					.build();
+			RateLimiter rateLimiter = RateLimiter.of("test", config);
+			RequestNotPermitted ex = RequestNotPermitted.createRequestNotPermitted(rateLimiter);
+
+			ResponseEntity<Map<String, Object>> response = handler.handleRateLimitExceeded(ex);
+
+			assertThat(response.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+			assertThat((String) response.getBody().get("message")).contains("Rate limit exceeded");
+			assertThat(response.getBody().get("status")).isEqualTo(429);
 		}
 	}
 

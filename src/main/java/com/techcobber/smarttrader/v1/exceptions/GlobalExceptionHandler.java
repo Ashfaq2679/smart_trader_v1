@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -93,6 +94,17 @@ public class GlobalExceptionHandler {
 	public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
 		log.warn("Illegal argument: {}", ex.getMessage());
 		return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+	}
+
+	/**
+	 * Handles rate-limiting violations from Resilience4j.
+	 *
+	 * @return 429 Too Many Requests
+	 */
+	@ExceptionHandler(RequestNotPermitted.class)
+	public ResponseEntity<Map<String, Object>> handleRateLimitExceeded(RequestNotPermitted ex) {
+		log.warn("Rate limit exceeded: {}", ex.getMessage());
+		return buildResponse(HttpStatus.TOO_MANY_REQUESTS, "Rate limit exceeded. Please try again later.");
 	}
 
 	/**
