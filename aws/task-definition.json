@@ -1,4 +1,5 @@
 {
+  "_comment": "ECS Fargate task definition template. Before deploying, replace the following placeholders with your actual values: ACCOUNT_ID (your AWS account ID), REGION (your target AWS region, e.g. us-east-1), and MONGODB_CONNECTION_STRING (your Amazon DocumentDB or MongoDB Atlas endpoint). The 'image' field is automatically populated by the deploy workflow.",
   "family": "smart-trader-v1",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
@@ -20,7 +21,7 @@
       "environment": [
         {
           "name": "SPRING_DATA_MONGODB_URI",
-          "value": "mongodb://mongo:27017/smart-trader"
+          "value": "MONGODB_CONNECTION_STRING"
         }
       ],
       "secrets": [

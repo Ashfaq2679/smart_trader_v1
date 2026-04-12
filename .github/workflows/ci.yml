@@ -25,6 +25,8 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      # SmartTraderV1ApplicationTests is a @SpringBootTest that requires MongoDB
+      # and OAuth2 configuration — excluded from CI since unit tests cover all logic.
       - name: Build and run tests
         run: mvn clean verify -B -Dtest='!SmartTraderV1ApplicationTests'
 
