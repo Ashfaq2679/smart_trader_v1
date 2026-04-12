@@ -1,5 +1,7 @@
 package com.techcobber.smarttrader.v1.services;
 
+import static com.techcobber.smarttrader.v1.models.OrderConstants.*;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -84,53 +86,32 @@ public class OrderService {
 
 			if (response.isSuccess()) {
 				order.setCoinbaseOrderId(response.getOrderId());
-				order.setStatus("PENDING");
+				order.setStatus(STATUS_PENDING);
 				orderRepository.save(order);
 				log.info("Order placed successfully for user [{}]: coinbaseOrderId={}", userId, response.getOrderId());
 
-				return OrderResponse.builder()
-						.success(true)
-						.orderId(order.getId())
-						.coinbaseOrderId(response.getOrderId())
-						.productId(request.getProductId())
-						.side(request.getSide())
-						.orderType(request.getOrderType())
-						.status("PENDING")
-						.message("Order placed successfully")
-						.build();
+				return buildOrderResponse(true, order.getId(), response.getOrderId(),
+						request.getProductId(), request.getSide(), request.getOrderType(),
+						STATUS_PENDING, null, MSG_ORDER_PLACED);
 			} else {
-				order.setStatus("FAILED");
+				order.setStatus(STATUS_FAILED);
 				order.setFailureReason(response.getFailureReason());
 				orderRepository.save(order);
 				log.warn("Order placement failed for user [{}]: {}", userId, response.getFailureReason());
 
-				return OrderResponse.builder()
-						.success(false)
-						.orderId(order.getId())
-						.productId(request.getProductId())
-						.side(request.getSide())
-						.orderType(request.getOrderType())
-						.status("FAILED")
-						.failureReason(response.getFailureReason())
-						.message("Order placement failed")
-						.build();
+				return buildOrderResponse(false, order.getId(), null,
+						request.getProductId(), request.getSide(), request.getOrderType(),
+						STATUS_FAILED, response.getFailureReason(), MSG_ORDER_FAILED);
 			}
 		} catch (CoinbaseAdvancedException e) {
-			order.setStatus("FAILED");
+			order.setStatus(STATUS_FAILED);
 			order.setFailureReason(e.getMessage());
 			orderRepository.save(order);
 			log.error("Coinbase API error placing order for user [{}]: {}", userId, e.getMessage());
 
-			return OrderResponse.builder()
-					.success(false)
-					.orderId(order.getId())
-					.productId(request.getProductId())
-					.side(request.getSide())
-					.orderType(request.getOrderType())
-					.status("FAILED")
-					.failureReason(e.getMessage())
-					.message("Coinbase API error")
-					.build();
+			return buildOrderResponse(false, order.getId(), null,
+					request.getProductId(), request.getSide(), request.getOrderType(),
+					STATUS_FAILED, e.getMessage(), MSG_COINBASE_ERROR);
 		}
 	}
 
@@ -187,45 +168,31 @@ public class OrderService {
 			if (response.getResults() != null && !response.getResults().isEmpty()) {
 				CancelResult result = response.getResults().get(0);
 				if (result.isSuccess()) {
-					order.setStatus("CANCELLED");
+					order.setStatus(STATUS_CANCELLED);
 					order.setUpdatedAt(Instant.now());
 					orderRepository.save(order);
 					log.info("Order cancelled for user [{}]: orderId={}", userId, orderId);
 
-					return OrderResponse.builder()
-							.success(true)
-							.orderId(orderId)
-							.coinbaseOrderId(order.getCoinbaseOrderId())
-							.status("CANCELLED")
-							.message("Order cancelled successfully")
-							.build();
+					return buildOrderResponse(true, orderId, order.getCoinbaseOrderId(),
+							null, null, null,
+							STATUS_CANCELLED, null, MSG_ORDER_CANCELLED);
 				} else {
 					log.warn("Cancel failed for order [{}]: {}", orderId, result.getFailureReason());
-					return OrderResponse.builder()
-							.success(false)
-							.orderId(orderId)
-							.coinbaseOrderId(order.getCoinbaseOrderId())
-							.failureReason(result.getFailureReason())
-							.message("Order cancellation failed")
-							.build();
+					return buildOrderResponse(false, orderId, order.getCoinbaseOrderId(),
+							null, null, null,
+							null, result.getFailureReason(), MSG_CANCEL_FAILED);
 				}
 			}
 
-			return OrderResponse.builder()
-					.success(false)
-					.orderId(orderId)
-					.message("No cancellation result returned from Coinbase")
-					.build();
+			return buildOrderResponse(false, orderId, null,
+					null, null, null,
+					null, null, MSG_CANCEL_NO_RESULT);
 
 		} catch (CoinbaseAdvancedException e) {
 			log.error("Coinbase API error cancelling order [{}]: {}", orderId, e.getMessage());
-			return OrderResponse.builder()
-					.success(false)
-					.orderId(orderId)
-					.coinbaseOrderId(order.getCoinbaseOrderId())
-					.failureReason(e.getMessage())
-					.message("Coinbase API error during cancellation")
-					.build();
+			return buildOrderResponse(false, orderId, order.getCoinbaseOrderId(),
+					null, null, null,
+					null, e.getMessage(), MSG_CANCEL_API_ERROR);
 		}
 	}
 
@@ -280,6 +247,28 @@ public class OrderService {
 	// Internal
 	// ------------------------------------------------------------------
 
+	/**
+	 * Builds an {@link OrderResponse} with the given fields.
+	 * Centralises response construction to avoid duplication across success,
+	 * failure, and exception paths.
+	 */
+	private OrderResponse buildOrderResponse(boolean success, String orderId,
+			String coinbaseOrderId, String productId, String side,
+			String orderType, String status, String failureReason, String message) {
+
+		return OrderResponse.builder()
+				.success(success)
+				.orderId(orderId)
+				.coinbaseOrderId(coinbaseOrderId)
+				.productId(productId)
+				.side(side)
+				.orderType(orderType)
+				.status(status)
+				.failureReason(failureReason)
+				.message(message)
+				.build();
+	}
+
 	private void validateOrderRequest(OrderRequest request) {
 		if (request.getProductId() == null || request.getProductId().isBlank()) {
 			throw new IllegalArgumentException("productId is required");
@@ -288,17 +277,17 @@ public class OrderService {
 			throw new IllegalArgumentException("side is required");
 		}
 		String side = request.getSide().toUpperCase();
-		if (!"BUY".equals(side) && !"SELL".equals(side)) {
+		if (!SIDE_BUY.equals(side) && !SIDE_SELL.equals(side)) {
 			throw new IllegalArgumentException("side must be BUY or SELL");
 		}
 		if (request.getOrderType() == null || request.getOrderType().isBlank()) {
 			throw new IllegalArgumentException("orderType is required");
 		}
 		String orderType = request.getOrderType().toUpperCase();
-		if (!"MARKET".equals(orderType) && !"LIMIT".equals(orderType)) {
+		if (!TYPE_MARKET.equals(orderType) && !TYPE_LIMIT.equals(orderType)) {
 			throw new IllegalArgumentException("orderType must be MARKET or LIMIT");
 		}
-		if ("LIMIT".equals(orderType)) {
+		if (TYPE_LIMIT.equals(orderType)) {
 			if (request.getBaseSize() == null || request.getBaseSize() <= 0) {
 				throw new IllegalArgumentException("baseSize is required and must be > 0 for LIMIT orders");
 			}
@@ -306,7 +295,7 @@ public class OrderService {
 				throw new IllegalArgumentException("limitPrice is required and must be > 0 for LIMIT orders");
 			}
 		}
-		if ("MARKET".equals(orderType)) {
+		if (TYPE_MARKET.equals(orderType)) {
 			boolean hasBase = request.getBaseSize() != null && request.getBaseSize() > 0;
 			boolean hasQuote = request.getQuoteSize() != null && request.getQuoteSize() > 0;
 			if (!hasBase && !hasQuote) {
@@ -318,7 +307,7 @@ public class OrderService {
 	private OrderConfiguration buildOrderConfiguration(OrderRequest request) {
 		String orderType = request.getOrderType().toUpperCase();
 
-		if ("MARKET".equals(orderType)) {
+		if (TYPE_MARKET.equals(orderType)) {
 			MarketIoc.Builder marketBuilder = new MarketIoc.Builder();
 			if (request.getBaseSize() != null && request.getBaseSize() > 0) {
 				marketBuilder.baseSize(String.valueOf(request.getBaseSize()));
