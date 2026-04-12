@@ -1,0 +1,54 @@
+{
+  "_comment": "ECS Fargate task definition template. Before deploying, replace the following placeholders with your actual values: ACCOUNT_ID (your AWS account ID), REGION (your target AWS region, e.g. us-east-1), and MONGODB_CONNECTION_STRING (your Amazon DocumentDB or MongoDB Atlas endpoint). The 'image' field is automatically populated by the deploy workflow.",
+  "family": "smart-trader-v1",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "smart-trader-v1",
+      "image": "PLACEHOLDER",
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "SPRING_DATA_MONGODB_URI",
+          "value": "MONGODB_CONNECTION_STRING"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "CREDENTIAL_ENCRYPTION_KEY",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smart-trader/credential-encryption-key"
+        },
+        {
+          "name": "OAUTH2_JWK_SET_URI",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:smart-trader/oauth2-jwk-set-uri"
+        }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/smart-trader-v1",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}
