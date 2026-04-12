@@ -248,12 +248,14 @@ public class CoinbasePublicServiceImpl extends PublicServiceImpl {
 	public ListProductsResponse listPublicProducts() throws CoinbaseAdvancedException {
 		log.info("Fetching public products from Coinbase API...");
 		if (circuitBreaker != null) {
-			return CircuitBreaker.decorateCheckedSupplier(circuitBreaker, () ->
-				this.request(HttpMethod.GET, baseUrl, new ListPublicProductsRequest(), List.of(200),
-						new TypeReference<ListProductsResponse>() {})).unchecked().get();
+			return CircuitBreaker.decorateCheckedSupplier(circuitBreaker,
+					this::fetchPublicProducts).unchecked().get();
 		}
+		return fetchPublicProducts();
+	}
+
+	private ListProductsResponse fetchPublicProducts() throws CoinbaseAdvancedException {
 		return this.request(HttpMethod.GET, baseUrl, new ListPublicProductsRequest(), List.of(200),
-				new TypeReference<ListProductsResponse>() {
-				});
+				new TypeReference<ListProductsResponse>() {});
 	}
 }
