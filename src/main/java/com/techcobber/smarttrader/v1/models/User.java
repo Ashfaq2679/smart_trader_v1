@@ -5,6 +5,8 @@ import java.time.Instant;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
 /**
@@ -18,8 +20,10 @@ import lombok.Data;
 public class User {
 
 	@Id
+	@NotBlank(message = "userId must not be blank")
 	private String userId;
 
+	@Email(message = "email must be a valid email address")
 	private String email;
 
 	private String displayName;

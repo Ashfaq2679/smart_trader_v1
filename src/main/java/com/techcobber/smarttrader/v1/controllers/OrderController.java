@@ -18,6 +18,7 @@ import com.techcobber.smarttrader.v1.models.OrderRequest;
 import com.techcobber.smarttrader.v1.models.OrderResponse;
 import com.techcobber.smarttrader.v1.services.OrderService;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -46,7 +47,7 @@ public class OrderController {
 	@PostMapping("/{userId}")
 	public ResponseEntity<?> placeOrder(
 			@PathVariable String userId,
-			@RequestBody OrderRequest request) {
+			@Valid @RequestBody OrderRequest request) {
 		try {
 			OrderResponse response = orderService.placeOrder(userId, request);
 			if (response.isSuccess()) {
