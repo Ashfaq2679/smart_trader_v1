@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.techcobber.smarttrader.v1.models.User;
 import com.techcobber.smarttrader.v1.services.UserService;
 
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +42,7 @@ public class UserController {
 	 * @return the created user with 201 status, or 400/409 on validation errors
 	 */
 	@PostMapping
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> createUser(@Valid @RequestBody User user) {
 		try {
 			User created = userService.createUser(user);
@@ -67,6 +69,7 @@ public class UserController {
 	 * @return the user or 404 if not found
 	 */
 	@GetMapping("/{userId}")
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> getUser(@PathVariable String userId) {
 		return userService.getUser(userId)
 				.<ResponseEntity<?>>map(ResponseEntity::ok)
@@ -82,6 +85,7 @@ public class UserController {
 	 * @return the updated user or 404 if not found
 	 */
 	@PutMapping("/{userId}")
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> updateUser(@PathVariable String userId, @RequestBody User updates) {
 		try {
 			User updated = userService.updateUser(userId, updates);
@@ -104,6 +108,7 @@ public class UserController {
 	 * @return 200 on success or 404 if not found
 	 */
 	@DeleteMapping("/{userId}")
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> deleteUser(@PathVariable String userId) {
 		try {
 			userService.deleteUser(userId);

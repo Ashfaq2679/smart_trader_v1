@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.techcobber.smarttrader.v1.services.ClientService;
 
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -39,6 +40,7 @@ public class CredentialController {
 	 * @return 200 on success, 400 if input is invalid
 	 */
 	@PostMapping("/{userId}")
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<Map<String, String>> registerCredentials(
 			@PathVariable String userId,
 			@RequestBody Map<String, String> requestBody) {
@@ -68,6 +70,7 @@ public class CredentialController {
 	 * @return JSON with {@code exists: true/false}
 	 */
 	@GetMapping("/{userId}/exists")
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<Map<String, Boolean>> hasCredentials(@PathVariable String userId) {
 		boolean exists = clientService.hasCredentials(userId);
 		return ResponseEntity.ok(Map.of("exists", exists));
@@ -80,6 +83,7 @@ public class CredentialController {
 	 * @return 200 on success
 	 */
 	@DeleteMapping("/{userId}")
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<Map<String, String>> removeCredentials(@PathVariable String userId) {
 		try {
 			clientService.removeCredentials(userId);

@@ -17,6 +17,7 @@ import com.techcobber.smarttrader.v1.services.CoinbaseClientFactory;
 import com.techcobber.smarttrader.v1.services.CoinbasePublicServiceImpl;
 import com.techcobber.smarttrader.v1.services.MarketScannerService;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -42,6 +43,7 @@ public class MarketScanScheduler {
 	private static final int CANDLE_COUNT = 100;
 
 	private final CoinbaseClientFactory coinbaseClientFactory;
+	private final CircuitBreakerRegistry circuitBreakerRegistry;
 
 	private volatile List<CoinScanResult> latestResults = Collections.emptyList();
 
@@ -122,6 +124,7 @@ public class MarketScanScheduler {
 	 */
 	CoinbasePublicServiceImpl createPublicService(String userId) {
 		CoinbaseAdvancedClient client = coinbaseClientFactory.getClientForUser(userId);
-		return new CoinbasePublicServiceImpl(client);
+		return new CoinbasePublicServiceImpl(client,
+				circuitBreakerRegistry.circuitBreaker("coinbasePublicService"));
 	}
 }

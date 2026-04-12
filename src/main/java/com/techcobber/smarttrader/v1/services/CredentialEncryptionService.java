@@ -21,6 +21,9 @@ import lombok.extern.slf4j.Slf4j;
  * environment variable (Base64-encoded, 256-bit). Each encryption operation
  * generates a unique 12-byte IV that is prepended to the ciphertext, making
  * every encrypted value distinct even for identical inputs.</p>
+ *
+ * <p><b>Fail-fast:</b> The application will refuse to start if the encryption
+ * key is not configured, ensuring credentials cannot be stored insecurely.</p>
  */
 @Service
 @Slf4j
@@ -35,12 +38,13 @@ public class CredentialEncryptionService {
 	public CredentialEncryptionService(
 			@Value("${CREDENTIAL_ENCRYPTION_KEY:}") String base64Key) {
 		if (base64Key == null || base64Key.isBlank()) {
-			log.warn("CREDENTIAL_ENCRYPTION_KEY is not set — credential encryption is unavailable");
-			this.secretKey = null;
-		} else {
-			byte[] decodedKey = Base64.getDecoder().decode(base64Key);
-			this.secretKey = new SecretKeySpec(decodedKey, "AES");
+			throw new IllegalStateException(
+					"CREDENTIAL_ENCRYPTION_KEY is not set. "
+							+ "The application cannot start without a Base64-encoded 256-bit encryption key. "
+							+ "Set the CREDENTIAL_ENCRYPTION_KEY environment variable.");
 		}
+		byte[] decodedKey = Base64.getDecoder().decode(base64Key);
+		this.secretKey = new SecretKeySpec(decodedKey, "AES");
 	}
 
 	/**
@@ -51,7 +55,6 @@ public class CredentialEncryptionService {
 	 * @throws IllegalStateException if the encryption key is not configured
 	 */
 	public String encrypt(String plainText) {
-		requireKey();
 		try {
 			byte[] iv = new byte[GCM_IV_LENGTH];
 			new SecureRandom().nextBytes(iv);
@@ -79,7 +82,6 @@ public class CredentialEncryptionService {
 	 * @throws IllegalStateException if the encryption key is not configured
 	 */
 	public String decrypt(String cipherText) {
-		requireKey();
 		try {
 			byte[] combined = Base64.getDecoder().decode(cipherText);
 
@@ -99,11 +101,4 @@ public class CredentialEncryptionService {
 		}
 	}
 
-	private void requireKey() {
-		if (secretKey == null) {
-			throw new IllegalStateException(
-					"CREDENTIAL_ENCRYPTION_KEY is not configured. "
-							+ "Set the environment variable to a Base64-encoded 256-bit key.");
-		}
-	}
 }

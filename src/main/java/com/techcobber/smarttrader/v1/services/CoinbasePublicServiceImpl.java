@@ -16,6 +16,7 @@ import com.coinbase.core.common.HttpMethod;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.techcobber.smarttrader.v1.models.ListCandles;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -34,8 +35,15 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class CoinbasePublicServiceImpl extends PublicServiceImpl {
 
+	private final CircuitBreaker circuitBreaker;
+
 	public CoinbasePublicServiceImpl(CoinbaseAdvancedClient client) {
+		this(client, null);
+	}
+
+	public CoinbasePublicServiceImpl(CoinbaseAdvancedClient client, CircuitBreaker circuitBreaker) {
 		super(client);
+		this.circuitBreaker = circuitBreaker;
 	}
 
 	private final String baseUrl = "/brokerage/market/products";
@@ -239,8 +247,15 @@ public class CoinbasePublicServiceImpl extends PublicServiceImpl {
 	@Cacheable("publicProducts")
 	public ListProductsResponse listPublicProducts() throws CoinbaseAdvancedException {
 		log.info("Fetching public products from Coinbase API...");
+		if (circuitBreaker != null) {
+			return CircuitBreaker.decorateCheckedSupplier(circuitBreaker,
+					this::fetchPublicProducts).unchecked().get();
+		}
+		return fetchPublicProducts();
+	}
+
+	private ListProductsResponse fetchPublicProducts() throws CoinbaseAdvancedException {
 		return this.request(HttpMethod.GET, baseUrl, new ListPublicProductsRequest(), List.of(200),
-				new TypeReference<ListProductsResponse>() {
-				});
+				new TypeReference<ListProductsResponse>() {});
 	}
 }

@@ -18,6 +18,7 @@ import com.techcobber.smarttrader.v1.models.OrderRequest;
 import com.techcobber.smarttrader.v1.models.OrderResponse;
 import com.techcobber.smarttrader.v1.services.OrderService;
 
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +46,7 @@ public class OrderController {
 	 * @return the order result
 	 */
 	@PostMapping("/{userId}")
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> placeOrder(
 			@PathVariable String userId,
 			@Valid @RequestBody OrderRequest request) {
@@ -73,6 +75,7 @@ public class OrderController {
 	 * @return the order or 404
 	 */
 	@GetMapping("/{orderId}")
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> getOrder(@PathVariable String orderId) {
 		return orderService.getOrder(orderId)
 				.<ResponseEntity<?>>map(ResponseEntity::ok)
@@ -88,6 +91,7 @@ public class OrderController {
 	 * @return list of orders
 	 */
 	@GetMapping("/user/{userId}")
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<List<Order>> getOrdersByUser(
 			@PathVariable String userId,
 			@RequestParam(required = false) String productId) {
@@ -108,6 +112,7 @@ public class OrderController {
 	 * @return the cancellation result
 	 */
 	@PostMapping("/{userId}/cancel/{orderId}")
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> cancelOrder(
 			@PathVariable String userId,
 			@PathVariable String orderId) {
@@ -137,6 +142,7 @@ public class OrderController {
 	 * @return the updated order
 	 */
 	@PostMapping("/{userId}/sync/{orderId}")
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> syncOrderStatus(
 			@PathVariable String userId,
 			@PathVariable String orderId) {

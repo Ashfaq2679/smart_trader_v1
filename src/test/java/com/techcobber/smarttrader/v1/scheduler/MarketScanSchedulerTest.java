@@ -23,6 +23,7 @@ import com.techcobber.smarttrader.v1.models.TradeDecision.Signal;
 import com.techcobber.smarttrader.v1.services.CoinbaseClientFactory;
 import com.techcobber.smarttrader.v1.services.CoinbasePublicServiceImpl;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
@@ -41,11 +42,14 @@ class MarketScanSchedulerTest {
 	@Mock
 	private CoinbaseAdvancedClient mockClient;
 
+	private CircuitBreakerRegistry circuitBreakerRegistry;
+
 	private MarketScanScheduler scheduler;
 
 	@BeforeEach
 	void setUp() {
-		scheduler = new MarketScanScheduler(coinbaseClientFactory);
+		circuitBreakerRegistry = CircuitBreakerRegistry.ofDefaults();
+		scheduler = new MarketScanScheduler(coinbaseClientFactory, circuitBreakerRegistry);
 	}
 
 	// =======================================================================

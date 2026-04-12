@@ -17,6 +17,7 @@ import com.techcobber.smarttrader.v1.models.TradeDecision;
 import com.techcobber.smarttrader.v1.scheduler.MarketScanScheduler;
 import com.techcobber.smarttrader.v1.services.TradingOrchestrator;
 
+import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -43,6 +44,7 @@ public class MarketScanController {
 	 * @return list of scan results sorted by profit-potential score
 	 */
 	@PostMapping("/scan")
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> triggerScan(
 			@RequestParam String userId,
 			@RequestParam(defaultValue = "10") int limit) {
@@ -66,6 +68,7 @@ public class MarketScanController {
 	 * @return list of scan results or empty list if no scan has run yet
 	 */
 	@GetMapping("/results")
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<List<CoinScanResult>> getLatestResults() {
 		List<CoinScanResult> results = marketScanScheduler.getLatestResults();
 		return ResponseEntity.ok(results);
@@ -82,6 +85,7 @@ public class MarketScanController {
 	 * @return the trade decision
 	 */
 	@GetMapping("/analyze/{productId}")
+	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> analyzeProduct(
 			@PathVariable String productId,
 			@RequestParam String userId) {
