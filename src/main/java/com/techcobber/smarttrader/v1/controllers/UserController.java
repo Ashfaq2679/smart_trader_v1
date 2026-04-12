@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.techcobber.smarttrader.v1.models.User;
 import com.techcobber.smarttrader.v1.services.UserService;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -40,7 +41,7 @@ public class UserController {
 	 * @return the created user with 201 status, or 400/409 on validation errors
 	 */
 	@PostMapping
-	public ResponseEntity<?> createUser(@RequestBody User user) {
+	public ResponseEntity<?> createUser(@Valid @RequestBody User user) {
 		try {
 			User created = userService.createUser(user);
 			log.info("User created: [{}]", created.getUserId());
