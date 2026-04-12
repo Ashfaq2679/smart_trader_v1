@@ -1,7 +1,6 @@
 package com.techcobber.smarttrader.v1.models;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.lang.reflect.Constructor;
 
@@ -48,12 +47,9 @@ class OrderConstantsTest {
 	}
 
 	@Test
-	@DisplayName("Utility class cannot be instantiated")
-	void cannotInstantiate() throws Exception {
+	@DisplayName("Private constructor exists")
+	void privateConstructorExists() throws Exception {
 		Constructor<OrderConstants> constructor = OrderConstants.class.getDeclaredConstructor();
-		constructor.setAccessible(true);
-		// The private constructor should still work via reflection, but the class
-		// is not meant to be instantiated
-		assertThat(constructor.newInstance()).isNotNull();
+		assertThat(java.lang.reflect.Modifier.isPrivate(constructor.getModifiers())).isTrue();
 	}
 }

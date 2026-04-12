@@ -249,7 +249,7 @@ public class OrderService {
 
 	/**
 	 * Builds an {@link OrderResponse} with the given fields.
-	 * Centralises response construction to avoid duplication across success,
+	 * Centralizes response construction to avoid duplication across success,
 	 * failure, and exception paths.
 	 */
 	private OrderResponse buildOrderResponse(boolean success, String orderId,
