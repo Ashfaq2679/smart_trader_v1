@@ -9,9 +9,9 @@ describe('Badge', () => {
   });
 
   it('applies custom className', () => {
-    render(<Badge label="SELL" className="bg-red-100 text-red-800" />);
+    render(<Badge label="SELL" className="bg-danger-subtle text-danger-emphasis" />);
     const badge = screen.getByText('SELL');
-    expect(badge.className).toContain('bg-red-100');
-    expect(badge.className).toContain('text-red-800');
+    expect(badge.className).toContain('bg-danger-subtle');
+    expect(badge.className).toContain('text-danger-emphasis');
   });
 });

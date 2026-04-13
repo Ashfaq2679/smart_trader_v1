@@ -4,9 +4,9 @@ interface LoadingSpinnerProps {
 }
 
 const sizeClasses = {
-  sm: 'h-4 w-4',
-  md: 'h-8 w-8',
-  lg: 'h-12 w-12',
+  sm: 'spinner-border-sm',
+  md: '',
+  lg: 'spinner-lg',
 };
 
 /**
@@ -16,11 +16,10 @@ export const LoadingSpinner = ({
   size = 'md',
   message,
 }: LoadingSpinnerProps) => (
-  <div className="flex flex-col items-center justify-center gap-3 p-8" role="status">
-    <div
-      className={`${sizeClasses[size]} animate-spin rounded-full border-2 border-gray-200 border-t-blue-600`}
-    />
-    {message && <p className="text-sm text-gray-500">{message}</p>}
-    <span className="sr-only">Loading...</span>
+  <div className="d-flex flex-column align-items-center justify-content-center gap-3 p-4" role="status">
+    <div className={`spinner-border text-primary ${sizeClasses[size]}`}>
+      <span className="visually-hidden">Loading...</span>
+    </div>
+    {message && <p className="small text-secondary mb-0">{message}</p>}
   </div>
 );

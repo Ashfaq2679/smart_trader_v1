@@ -1,12 +1,12 @@
 # Smart Trader UI
 
-A modern React + TypeScript frontend for the Smart Trader trading application. Built with Vite, TailwindCSS, and industry-standard tooling.
+A modern React + TypeScript frontend for the Smart Trader trading application. Built with Vite, Bootstrap 5, and industry-standard tooling.
 
 ## Tech Stack
 
 - **Framework**: React 19 with TypeScript
 - **Build Tool**: Vite 8
-- **Styling**: TailwindCSS 4
+- **Styling**: Bootstrap 5.3
 - **HTTP Client**: Axios with JWT interceptors
 - **Routing**: React Router 7
 - **Testing**: Vitest + React Testing Library
@@ -76,7 +76,7 @@ src/
 ├── pages/            # Page components (routed views)
 ├── types/            # TypeScript type definitions
 ├── utils/            # Utility functions (formatters, validators, constants)
-├── styles/           # Global styles (TailwindCSS)
+├── styles/           # Global styles (Bootstrap + custom CSS)
 └── __tests__/        # Test files
 ```
 

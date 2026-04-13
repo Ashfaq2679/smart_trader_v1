@@ -85,12 +85,12 @@ export const CredentialsManager = () => {
         />
       )}
 
-      <div className="space-y-4">
-        <div className="flex items-center gap-2">
+      <div className="d-flex flex-column gap-3 mt-2">
+        <div className="d-flex align-items-center gap-2">
           <span
-            className={`inline-block h-2.5 w-2.5 rounded-full ${hasCredentials ? 'bg-green-500' : 'bg-red-500'}`}
+            className={`d-inline-block rounded-circle status-dot ${hasCredentials ? 'bg-success' : 'bg-danger'}`}
           />
-          <span className="text-sm text-gray-600">
+          <span className="small text-secondary">
             {hasCredentials
               ? 'Credentials are configured'
               : 'No credentials configured'}
@@ -98,10 +98,7 @@ export const CredentialsManager = () => {
         </div>
 
         <div>
-          <label
-            htmlFor="credentials"
-            className="mb-1 block text-sm font-medium text-gray-700"
-          >
+          <label htmlFor="credentials" className="form-label small fw-medium">
             {hasCredentials ? 'Update Credentials' : 'Enter Credentials'}
           </label>
           <textarea
@@ -110,14 +107,14 @@ export const CredentialsManager = () => {
             placeholder="Paste your Coinbase API credentials here..."
             value={credentials}
             onChange={(e) => setCredentials(e.target.value)}
-            className="w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="form-control form-control-sm font-monospace"
           />
-          <p className="mt-1 text-xs text-gray-500">
+          <div className="form-text">
             Credentials are encrypted with AES-256-GCM before storage.
-          </p>
+          </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="d-flex gap-2">
           <Button
             onClick={handleSave}
             isLoading={isSubmitting}

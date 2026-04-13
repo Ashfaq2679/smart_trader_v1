@@ -65,13 +65,13 @@ export const getStatusColor = (
   status: string,
 ): string => {
   const colors: Record<string, string> = {
-    PENDING: 'bg-yellow-100 text-yellow-800',
-    OPEN: 'bg-blue-100 text-blue-800',
-    FILLED: 'bg-green-100 text-green-800',
-    CANCELLED: 'bg-gray-100 text-gray-800',
-    FAILED: 'bg-red-100 text-red-800',
+    PENDING: 'bg-warning-subtle text-warning-emphasis',
+    OPEN: 'bg-info-subtle text-info-emphasis',
+    FILLED: 'bg-success-subtle text-success-emphasis',
+    CANCELLED: 'bg-secondary-subtle text-secondary-emphasis',
+    FAILED: 'bg-danger-subtle text-danger-emphasis',
   };
-  return colors[status] ?? 'bg-gray-100 text-gray-800';
+  return colors[status] ?? 'bg-secondary-subtle text-secondary-emphasis';
 };
 
 /**
@@ -81,9 +81,9 @@ export const getSignalColor = (
   signal: string,
 ): string => {
   const colors: Record<string, string> = {
-    BUY: 'bg-green-100 text-green-800',
-    SELL: 'bg-red-100 text-red-800',
-    HOLD: 'bg-yellow-100 text-yellow-800',
+    BUY: 'bg-success-subtle text-success-emphasis',
+    SELL: 'bg-danger-subtle text-danger-emphasis',
+    HOLD: 'bg-warning-subtle text-warning-emphasis',
   };
-  return colors[signal] ?? 'bg-gray-100 text-gray-800';
+  return colors[signal] ?? 'bg-secondary-subtle text-secondary-emphasis';
 };

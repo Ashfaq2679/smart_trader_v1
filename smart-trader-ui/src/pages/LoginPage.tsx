@@ -41,71 +41,67 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
-      <div className="w-full max-w-md space-y-8">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-blue-600">Smart Trader</h1>
-          <p className="mt-2 text-gray-500">
+    <div className="d-flex min-vh-100 align-items-center justify-content-center bg-light px-3">
+      <div className="w-100 login-container">
+        <div className="text-center mb-4">
+          <h1 className="h3 fw-bold text-primary">Smart Trader</h1>
+          <p className="text-secondary">
             Sign in with your JWT token to continue
           </p>
         </div>
 
         <form
           onSubmit={handleSubmit}
-          className="space-y-6 rounded-lg border border-gray-200 bg-white p-8 shadow-sm"
+          className="card shadow-sm"
         >
-          {error && (
-            <Alert
-              type="error"
-              message={error}
-              onDismiss={() => setError(null)}
-            />
-          )}
+          <div className="card-body d-flex flex-column gap-3 p-4">
+            {error && (
+              <Alert
+                type="error"
+                message={error}
+                onDismiss={() => setError(null)}
+              />
+            )}
 
-          <div>
-            <label
-              htmlFor="userId"
-              className="mb-1 block text-sm font-medium text-gray-700"
-            >
-              User ID
-            </label>
-            <input
-              id="userId"
-              type="text"
-              autoComplete="username"
-              placeholder="Enter your user ID"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              required
-            />
+            <div>
+              <label htmlFor="userId" className="form-label small fw-medium">
+                User ID
+              </label>
+              <input
+                id="userId"
+                type="text"
+                autoComplete="username"
+                placeholder="Enter your user ID"
+                value={userId}
+                onChange={(e) => setUserId(e.target.value)}
+                className="form-control"
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="token" className="form-label small fw-medium">
+                Access Token (JWT)
+              </label>
+              <textarea
+                id="token"
+                rows={3}
+                autoComplete="off"
+                placeholder="Paste your JWT access token here"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                className="form-control font-monospace small"
+                required
+              />
+            </div>
+
+            <Button type="submit" className="w-100" isLoading={isLoading}>
+              Sign In
+            </Button>
           </div>
-
-          <div>
-            <label
-              htmlFor="token"
-              className="mb-1 block text-sm font-medium text-gray-700"
-            >
-              Access Token (JWT)
-            </label>
-            <textarea
-              id="token"
-              rows={3}
-              autoComplete="off"
-              placeholder="Paste your JWT access token here"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-xs focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              required
-            />
-          </div>
-
-          <Button type="submit" className="w-full" isLoading={isLoading}>
-            Sign In
-          </Button>
         </form>
 
-        <p className="text-center text-xs text-gray-400">
+        <p className="text-center small text-secondary mt-3">
           Credentials are transmitted securely and never stored in plain text.
         </p>
       </div>

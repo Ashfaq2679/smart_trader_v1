@@ -83,58 +83,60 @@ export const OrderList = ({ onRefresh }: OrderListProps) => {
       )}
 
       {orders.length === 0 ? (
-        <p className="py-8 text-center text-gray-500">
+        <p className="py-4 text-center text-secondary">
           No orders found. Place your first order to get started.
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-gray-200 text-xs uppercase text-gray-500">
+        <div className="table-responsive">
+          <table className="table table-hover align-middle mb-0">
+            <thead className="table-light">
               <tr>
-                <th className="px-4 py-3">Product</th>
-                <th className="px-4 py-3">Side</th>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Qty</th>
-                <th className="px-4 py-3">Price</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Created</th>
-                <th className="px-4 py-3">Actions</th>
+                <th className="small text-uppercase text-secondary">Product</th>
+                <th className="small text-uppercase text-secondary">Side</th>
+                <th className="small text-uppercase text-secondary">Type</th>
+                <th className="small text-uppercase text-secondary">Qty</th>
+                <th className="small text-uppercase text-secondary">Price</th>
+                <th className="small text-uppercase text-secondary">Status</th>
+                <th className="small text-uppercase text-secondary">Created</th>
+                <th className="small text-uppercase text-secondary">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody>
               {orders.map((order) => (
-                <tr key={order.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium text-gray-900">
+                <tr key={order.id}>
+                  <td className="fw-medium">
                     {order.productId}
                   </td>
-                  <td className="px-4 py-3">
+                  <td>
                     <Badge
                       label={order.side}
                       className={
                         order.side === 'BUY'
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-red-100 text-red-800'
+                          ? 'bg-success-subtle text-success-emphasis'
+                          : 'bg-danger-subtle text-danger-emphasis'
                       }
                     />
                   </td>
-                  <td className="px-4 py-3 text-gray-600">{order.orderType}</td>
-                  <td className="px-4 py-3">{order.qty}</td>
-                  <td className="px-4 py-3">
+                  <td className="text-secondary">{order.orderType}</td>
+                  <td>{order.qty}</td>
+                  <td>
                     {order.limitPrice != null
                       ? formatCurrency(order.limitPrice)
                       : '—'}
                   </td>
-                  <td className="px-4 py-3">
+                  <td>
                     <Badge
                       label={order.status}
                       className={getStatusColor(order.status)}
                     />
                   </td>
-                  <td className="px-4 py-3 text-xs text-gray-500">
-                    {formatDateTime(order.createdAt)}
+                  <td>
+                    <small className="text-secondary">
+                      {formatDateTime(order.createdAt)}
+                    </small>
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-1">
+                  <td>
+                    <div className="d-flex gap-1">
                       {(order.status === 'PENDING' || order.status === 'OPEN') && (
                         <Button
                           variant="danger"

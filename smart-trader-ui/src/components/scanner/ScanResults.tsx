@@ -56,11 +56,11 @@ export const ScanResults = ({ onAnalyze }: ScanResultsProps) => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="d-flex flex-column gap-3">
       <Card
         title="Market Scanner"
         actions={
-          <div className="flex gap-2">
+          <div className="d-flex gap-2">
             <Button
               variant="secondary"
               size="sm"
@@ -88,49 +88,49 @@ export const ScanResults = ({ onAnalyze }: ScanResultsProps) => {
         )}
 
         {!isScanning && results.length === 0 && (
-          <p className="py-8 text-center text-gray-500">
+          <p className="py-4 text-center text-secondary">
             No scan results available. Click &quot;Run Scan&quot; or &quot;Load
             Cached&quot; to see results.
           </p>
         )}
 
         {!isScanning && results.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-gray-200 text-xs uppercase text-gray-500">
+          <div className="table-responsive">
+            <table className="table table-hover align-middle mb-0">
+              <thead className="table-light">
                 <tr>
-                  <th className="px-4 py-3">Product</th>
-                  <th className="px-4 py-3">Price</th>
-                  <th className="px-4 py-3">24h Change</th>
-                  <th className="px-4 py-3">Volume</th>
-                  <th className="px-4 py-3">Signal</th>
-                  <th className="px-4 py-3">Confidence</th>
-                  <th className="px-4 py-3">Score</th>
-                  <th className="px-4 py-3">Actions</th>
+                  <th className="small text-uppercase text-secondary">Product</th>
+                  <th className="small text-uppercase text-secondary">Price</th>
+                  <th className="small text-uppercase text-secondary">24h Change</th>
+                  <th className="small text-uppercase text-secondary">Volume</th>
+                  <th className="small text-uppercase text-secondary">Signal</th>
+                  <th className="small text-uppercase text-secondary">Confidence</th>
+                  <th className="small text-uppercase text-secondary">Score</th>
+                  <th className="small text-uppercase text-secondary">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody>
                 {results.map((result) => (
-                  <tr key={result.productId} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-medium text-gray-900">
+                  <tr key={result.productId}>
+                    <td className="fw-medium">
                       {result.productId}
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {formatCurrency(result.currentPrice)}
                     </td>
                     <td
-                      className={`px-4 py-3 ${
+                      className={
                         result.priceChangePercent24h >= 0
-                          ? 'text-green-600'
-                          : 'text-red-600'
-                      }`}
+                          ? 'text-success'
+                          : 'text-danger'
+                      }
                     >
                       {formatPercent(result.priceChangePercent24h)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {formatCompactNumber(result.volume24h)}
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       <Badge
                         label={result.tradeDecision.signal}
                         className={getSignalColor(
@@ -138,25 +138,29 @@ export const ScanResults = ({ onAnalyze }: ScanResultsProps) => {
                         )}
                       />
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {(result.tradeDecision.confidence * 100).toFixed(0)}%
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 w-16 overflow-hidden rounded-full bg-gray-200">
+                    <td>
+                      <div className="d-flex align-items-center gap-2">
+                        <div className="progress score-bar">
                           <div
-                            className="h-full rounded-full bg-blue-600"
+                            className="progress-bar"
+                            role="progressbar"
+                            aria-valuenow={result.profitPotentialScore}
+                            aria-valuemin={0}
+                            aria-valuemax={100}
                             style={{
                               width: `${result.profitPotentialScore}%`,
                             }}
                           />
                         </div>
-                        <span className="text-xs text-gray-500">
+                        <small className="text-secondary">
                           {result.profitPotentialScore.toFixed(0)}
-                        </span>
+                        </small>
                       </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       <Button
                         variant="ghost"
                         size="sm"

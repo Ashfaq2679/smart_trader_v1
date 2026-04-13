@@ -79,32 +79,32 @@ describe('capitalize', () => {
 
 describe('getStatusColor', () => {
   it('returns correct class for FILLED', () => {
-    expect(getStatusColor('FILLED')).toContain('green');
+    expect(getStatusColor('FILLED')).toContain('success');
   });
 
   it('returns correct class for FAILED', () => {
-    expect(getStatusColor('FAILED')).toContain('red');
+    expect(getStatusColor('FAILED')).toContain('danger');
   });
 
   it('returns default class for unknown status', () => {
-    expect(getStatusColor('UNKNOWN')).toContain('gray');
+    expect(getStatusColor('UNKNOWN')).toContain('secondary');
   });
 });
 
 describe('getSignalColor', () => {
-  it('returns green for BUY', () => {
-    expect(getSignalColor('BUY')).toContain('green');
+  it('returns success for BUY', () => {
+    expect(getSignalColor('BUY')).toContain('success');
   });
 
-  it('returns red for SELL', () => {
-    expect(getSignalColor('SELL')).toContain('red');
+  it('returns danger for SELL', () => {
+    expect(getSignalColor('SELL')).toContain('danger');
   });
 
-  it('returns yellow for HOLD', () => {
-    expect(getSignalColor('HOLD')).toContain('yellow');
+  it('returns warning for HOLD', () => {
+    expect(getSignalColor('HOLD')).toContain('warning');
   });
 
   it('returns default for unknown', () => {
-    expect(getSignalColor('UNKNOWN')).toContain('gray');
+    expect(getSignalColor('UNKNOWN')).toContain('secondary');
   });
 });

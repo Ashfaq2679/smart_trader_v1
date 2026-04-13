@@ -15,38 +15,39 @@ export const Sidebar = () => {
   const { user } = useAuth();
 
   return (
-    <aside className="flex h-screen w-64 flex-col border-r border-gray-200 bg-gray-50">
-      <div className="border-b border-gray-200 px-6 py-5">
-        <h1 className="text-xl font-bold text-blue-600">Smart Trader</h1>
-        <p className="mt-1 text-xs text-gray-500">v1.0</p>
+    <aside className="sidebar d-flex flex-column border-end bg-light">
+      <div className="border-bottom px-4 py-3">
+        <h1 className="h5 fw-bold text-primary mb-0">Smart Trader</h1>
+        <small className="text-secondary">v1.0</small>
       </div>
 
-      <nav className="flex-1 space-y-1 px-3 py-4" aria-label="Main navigation">
-        {navItems.map(({ to, label, icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={to === '/'}
-            className={({ isActive }) =>
-              `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                isActive
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-              }`
-            }
-          >
-            <span className="text-lg">{icon}</span>
-            {label}
-          </NavLink>
-        ))}
+      <nav className="flex-grow-1 px-3 py-3" aria-label="Main navigation">
+        <ul className="nav flex-column gap-1">
+          {navItems.map(({ to, label, icon }) => (
+            <li className="nav-item" key={to}>
+              <NavLink
+                to={to}
+                end={to === '/'}
+                className={({ isActive }) =>
+                  `nav-link d-flex align-items-center gap-2 py-2 px-3 small fw-medium ${
+                    isActive ? 'active' : 'text-secondary'
+                  }`
+                }
+              >
+                <span className="fs-6">{icon}</span>
+                {label}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
       </nav>
 
       {user && (
-        <div className="border-t border-gray-200 px-4 py-4">
-          <p className="truncate text-sm font-medium text-gray-700">
+        <div className="border-top px-4 py-3">
+          <p className="mb-0 small fw-medium text-dark text-truncate">
             {user.displayName || user.userId}
           </p>
-          <p className="truncate text-xs text-gray-500">{user.email}</p>
+          <small className="text-secondary text-truncate d-block">{user.email}</small>
         </div>
       )}
     </aside>

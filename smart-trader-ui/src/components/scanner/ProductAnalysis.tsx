@@ -62,37 +62,37 @@ export const ProductAnalysis = ({
       )}
 
       {decision && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <div>
-              <p className="text-sm text-gray-500">Signal</p>
+        <div className="d-flex flex-column gap-3">
+          <div className="row g-3">
+            <div className="col-6 col-sm-4">
+              <p className="small text-secondary mb-1">Signal</p>
               <Badge
                 label={decision.signal}
                 className={getSignalColor(decision.signal)}
               />
             </div>
-            <div>
-              <p className="text-sm text-gray-500">Confidence</p>
-              <p className="text-lg font-semibold">
+            <div className="col-6 col-sm-4">
+              <p className="small text-secondary mb-1">Confidence</p>
+              <p className="h6 fw-semibold mb-0">
                 {(decision.confidence * 100).toFixed(1)}%
               </p>
             </div>
-            <div>
-              <p className="text-sm text-gray-500">Trend</p>
-              <p className="text-lg font-semibold">{decision.trendDirection}</p>
+            <div className="col-6 col-sm-4">
+              <p className="small text-secondary mb-1">Trend</p>
+              <p className="h6 fw-semibold mb-0">{decision.trendDirection}</p>
             </div>
             {decision.nearestSupport != null && (
-              <div>
-                <p className="text-sm text-gray-500">Nearest Support</p>
-                <p className="text-lg font-semibold text-green-600">
+              <div className="col-6 col-sm-4">
+                <p className="small text-secondary mb-1">Nearest Support</p>
+                <p className="h6 fw-semibold text-success mb-0">
                   {formatCurrency(decision.nearestSupport)}
                 </p>
               </div>
             )}
             {decision.nearestResistance != null && (
-              <div>
-                <p className="text-sm text-gray-500">Nearest Resistance</p>
-                <p className="text-lg font-semibold text-red-600">
+              <div className="col-6 col-sm-4">
+                <p className="small text-secondary mb-1">Nearest Resistance</p>
+                <p className="h6 fw-semibold text-danger mb-0">
                   {formatCurrency(decision.nearestResistance)}
                 </p>
               </div>
@@ -100,23 +100,23 @@ export const ProductAnalysis = ({
           </div>
 
           <div>
-            <p className="mb-2 text-sm font-medium text-gray-700">Reasoning</p>
-            <p className="rounded-md bg-gray-50 p-3 text-sm text-gray-600">
+            <p className="small fw-medium mb-2">Reasoning</p>
+            <p className="bg-light rounded p-3 small text-secondary mb-0">
               {decision.reasoning}
             </p>
           </div>
 
           {decision.detectedPatterns.length > 0 && (
             <div>
-              <p className="mb-2 text-sm font-medium text-gray-700">
+              <p className="small fw-medium mb-2">
                 Detected Patterns
               </p>
-              <div className="flex flex-wrap gap-2">
+              <div className="d-flex flex-wrap gap-2">
                 {decision.detectedPatterns.map((pattern) => (
                   <Badge
                     key={pattern}
                     label={pattern}
-                    className="bg-purple-100 text-purple-800"
+                    className="bg-purple text-white"
                   />
                 ))}
               </div>

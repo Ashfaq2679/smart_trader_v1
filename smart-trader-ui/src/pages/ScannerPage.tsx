@@ -9,8 +9,8 @@ const ScannerPage = () => {
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Market Scanner</h1>
+    <div className="d-flex flex-column gap-4">
+      <h1 className="h4 fw-bold">Market Scanner</h1>
 
       {selectedProduct && (
         <ProductAnalysis

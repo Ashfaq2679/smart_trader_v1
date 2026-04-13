@@ -7,9 +7,7 @@ interface BadgeProps {
  * Reusable badge component for displaying status/signal labels.
  */
 export const Badge = ({ label, className = '' }: BadgeProps) => (
-  <span
-    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${className}`}
-  >
+  <span className={`badge rounded-pill ${className}`}>
     {label}
   </span>
 );

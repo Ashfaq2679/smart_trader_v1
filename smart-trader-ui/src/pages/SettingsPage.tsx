@@ -5,8 +5,8 @@ import { PreferencesForm } from '../components/preferences/PreferencesForm';
  * Settings page — manage credentials and trading preferences.
  */
 const SettingsPage = () => (
-  <div className="space-y-6">
-    <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+  <div className="d-flex flex-column gap-4">
+    <h1 className="h4 fw-bold">Settings</h1>
     <CredentialsManager />
     <PreferencesForm />
   </div>

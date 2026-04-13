@@ -15,7 +15,7 @@ describe('Card', () => {
 
   it('renders without title header when no title or actions', () => {
     const { container } = render(<Card>Content only</Card>);
-    expect(container.querySelectorAll('.border-b')).toHaveLength(0);
+    expect(container.querySelectorAll('.card-header')).toHaveLength(0);
   });
 
   it('renders actions in header', () => {

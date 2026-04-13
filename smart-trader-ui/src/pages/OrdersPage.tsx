@@ -9,8 +9,8 @@ const OrdersPage = () => {
   const [refreshKey, setRefreshKey] = useState(0);
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
+    <div className="d-flex flex-column gap-4">
+      <h1 className="h4 fw-bold">Orders</h1>
       <OrderForm onOrderPlaced={() => setRefreshKey((k) => k + 1)} />
       <OrderList key={refreshKey} />
     </div>

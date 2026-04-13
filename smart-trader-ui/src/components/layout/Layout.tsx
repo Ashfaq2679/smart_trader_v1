@@ -6,11 +6,11 @@ import { Header } from './Header';
  * Main layout component that wraps authenticated pages with sidebar and header.
  */
 export const Layout = () => (
-  <div className="flex h-screen bg-gray-50">
+  <div className="d-flex vh-100 bg-light">
     <Sidebar />
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div className="main-content d-flex flex-column overflow-hidden">
       <Header />
-      <main className="flex-1 overflow-y-auto p-6">
+      <main className="flex-grow-1 overflow-auto p-4">
         <Outlet />
       </main>
     </div>

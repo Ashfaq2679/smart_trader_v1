@@ -30,6 +30,6 @@ describe('Button', () => {
 
   it('shows spinner when loading', () => {
     const { container } = render(<Button isLoading>Loading</Button>);
-    expect(container.querySelector('.animate-spin')).toBeInTheDocument();
+    expect(container.querySelector('.spinner-border')).toBeInTheDocument();
   });
 });
