@@ -28,9 +28,17 @@ export const isValidProductId = (productId: string): boolean => {
 
 /**
  * Sanitize a string by removing HTML tags to prevent XSS.
+ * Uses iterative replacement to handle nested/broken tags.
  */
-export const sanitizeInput = (input: string): string =>
-  input.replace(/<[^>]*>/g, '').trim();
+export const sanitizeInput = (input: string): string => {
+  let result = input;
+  let previous: string;
+  do {
+    previous = result;
+    result = result.replace(/<[^>]*>/g, '');
+  } while (result !== previous);
+  return result.trim();
+};
 
 /**
  * Validate an order request for completeness.
