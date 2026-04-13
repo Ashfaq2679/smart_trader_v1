@@ -33,3 +33,9 @@ target/
 .settings/
 .project
 .classpath
+
+# Node.js / React UI
+smart-trader-ui/node_modules/
+smart-trader-ui/dist/
+smart-trader-ui/.env
+smart-trader-ui/.env.local
