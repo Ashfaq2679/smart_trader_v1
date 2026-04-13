@@ -116,7 +116,7 @@ export const ProductAnalysis = ({
                   <Badge
                     key={pattern}
                     label={pattern}
-                    className="bg-purple text-white"
+                    className="bg-info-subtle text-info-emphasis"
                   />
                 ))}
               </div>
