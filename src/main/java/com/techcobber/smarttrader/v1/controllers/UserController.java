@@ -21,6 +21,11 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+
 /**
  * REST controller for managing users.
  *
@@ -31,16 +36,18 @@ import lombok.extern.slf4j.Slf4j;
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
+@Tag(name = "Users", description = "Operations on platform users")
 public class UserController {
 
 	private final UserService userService;
 
-	/**
-	 * Creates a new user.
-	 *
-	 * @param user the user data (must contain a non-blank userId)
-	 * @return the created user with 201 status, or 400/409 on validation errors
-	 */
+	@Operation(summary = "Create user", description = "Creates a new platform user")
+	@ApiResponses({
+			@ApiResponse(responseCode = "201", description = "User created"),
+			@ApiResponse(responseCode = "400", description = "Invalid input"),
+			@ApiResponse(responseCode = "409", description = "User already exists"),
+			@ApiResponse(responseCode = "500", description = "Server error")
+	})
 	@PostMapping
 	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> createUser(@Valid @RequestBody User user) {
@@ -62,12 +69,11 @@ public class UserController {
 		}
 	}
 
-	/**
-	 * Retrieves a user by userId.
-	 *
-	 * @param userId unique user identifier
-	 * @return the user or 404 if not found
-	 */
+	@Operation(summary = "Get user", description = "Retrieve a user by their userId")
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "OK"),
+			@ApiResponse(responseCode = "404", description = "User not found")
+	})
 	@GetMapping("/{userId}")
 	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> getUser(@PathVariable String userId) {
@@ -77,13 +83,12 @@ public class UserController {
 						.body(Map.of("error", "User not found: " + userId)));
 	}
 
-	/**
-	 * Updates a user's mutable fields (email, displayName, enabled).
-	 *
-	 * @param userId  unique user identifier
-	 * @param updates user object carrying updated values
-	 * @return the updated user or 404 if not found
-	 */
+	@Operation(summary = "Update user", description = "Update mutable fields for a user")
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "Updated"),
+			@ApiResponse(responseCode = "404", description = "User not found"),
+			@ApiResponse(responseCode = "500", description = "Server error")
+	})
 	@PutMapping("/{userId}")
 	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> updateUser(@PathVariable String userId, @RequestBody User updates) {
@@ -101,12 +106,12 @@ public class UserController {
 		}
 	}
 
-	/**
-	 * Deletes a user by userId.
-	 *
-	 * @param userId unique user identifier
-	 * @return 200 on success or 404 if not found
-	 */
+	@Operation(summary = "Delete user", description = "Deletes a user by userId")
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "Deleted"),
+			@ApiResponse(responseCode = "404", description = "User not found"),
+			@ApiResponse(responseCode = "500", description = "Server error")
+	})
 	@DeleteMapping("/{userId}")
 	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> deleteUser(@PathVariable String userId) {

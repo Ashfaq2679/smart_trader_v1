@@ -23,28 +23,29 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+
 /**
  * REST controller for managing trading orders.
- *
- * <p>Provides endpoints for placing BUY/SELL orders on Coinbase, retrieving
- * order details, listing orders by user, cancelling open orders, and syncing
- * order status from Coinbase.</p>
  */
 @Slf4j
 @RestController
 @RequestMapping("/api/orders")
 @RequiredArgsConstructor
+@Tag(name = "Orders", description = "Place and query trading orders")
 public class OrderController {
 
 	private final OrderService orderService;
 
-	/**
-	 * Places a new BUY or SELL order.
-	 *
-	 * @param userId  the user placing the order (path variable)
-	 * @param request order parameters
-	 * @return the order result
-	 */
+	@Operation(summary = "Place order", description = "Place a BUY or SELL order for a user")
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "Order placed"),
+			@ApiResponse(responseCode = "400", description = "Invalid request or Coinbase error"),
+			@ApiResponse(responseCode = "500", description = "Server error")
+	})
 	@PostMapping("/{userId}")
 	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> placeOrder(
@@ -68,12 +69,11 @@ public class OrderController {
 		}
 	}
 
-	/**
-	 * Retrieves a single order by its internal ID.
-	 *
-	 * @param orderId the internal database order ID
-	 * @return the order or 404
-	 */
+	@Operation(summary = "Get order", description = "Retrieve order by internal orderId")
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "OK"),
+			@ApiResponse(responseCode = "404", description = "Order not found")
+	})
 	@GetMapping("/{orderId}")
 	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> getOrder(@PathVariable String orderId) {
@@ -83,13 +83,10 @@ public class OrderController {
 						.body(Map.of("error", "Order not found: " + orderId)));
 	}
 
-	/**
-	 * Lists all orders for a user, optionally filtered by product.
-	 *
-	 * @param userId    the user whose orders to list
-	 * @param productId optional filter by trading pair
-	 * @return list of orders
-	 */
+	@Operation(summary = "List orders by user", description = "List all orders for a user; optional product filter")
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "OK")
+	})
 	@GetMapping("/user/{userId}")
 	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<List<Order>> getOrdersByUser(
