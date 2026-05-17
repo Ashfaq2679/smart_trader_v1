@@ -100,4 +100,60 @@ public class OrderController {
 		}
 		return ResponseEntity.ok(orders);
 	}
+
+	/**
+	 * Cancels an open order on Coinbase and updates the local record.
+	 *
+	 * @param userId  the user who owns the order
+	 * @param orderId the internal database order ID
+	 * @return the cancellation result
+	 */
+	@PostMapping("/{userId}/cancel/{orderId}")
+	@RateLimiter(name = "apiRateLimiter")
+	public ResponseEntity<?> cancelOrder(
+			@PathVariable String userId,
+			@PathVariable String orderId) {
+		try {
+			OrderResponse response = orderService.cancelOrder(userId, orderId);
+			if (response.isSuccess()) {
+				return ResponseEntity.ok(response);
+			} else {
+				return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+			}
+		} catch (IllegalArgumentException e) {
+			log.warn("Invalid cancel request from user [{}] for order [{}]: {}", userId, orderId, e.getMessage());
+			return ResponseEntity.badRequest()
+					.body(Map.of("error", e.getMessage()));
+		} catch (Exception e) {
+			log.error("Error cancelling order [{}] for user [{}]: {}", orderId, userId, e.getMessage());
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(Map.of("error", "Failed to cancel order: " + e.getMessage()));
+		}
+	}
+
+	/**
+	 * Syncs the latest order status from Coinbase and returns the updated record.
+	 *
+	 * @param userId  the user who owns the order
+	 * @param orderId the internal database order ID
+	 * @return the updated order
+	 */
+	@PostMapping("/{userId}/sync/{orderId}")
+	@RateLimiter(name = "apiRateLimiter")
+	public ResponseEntity<?> syncOrderStatus(
+			@PathVariable String userId,
+			@PathVariable String orderId) {
+		try {
+			Order updated = orderService.syncOrderStatus(userId, orderId);
+			return ResponseEntity.ok(updated);
+		} catch (IllegalArgumentException e) {
+			log.warn("Invalid sync request from user [{}] for order [{}]: {}", userId, orderId, e.getMessage());
+			return ResponseEntity.badRequest()
+					.body(Map.of("error", e.getMessage()));
+		} catch (Exception e) {
+			log.error("Error syncing order [{}] for user [{}]: {}", orderId, userId, e.getMessage());
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+					.body(Map.of("error", "Failed to sync order status: " + e.getMessage()));
+		}
+	}
 }
