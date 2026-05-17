@@ -19,26 +19,28 @@ import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+
 /**
  * REST controller for managing per-user trading preferences.
- *
- * <p>Preferences are scoped to a user and support create-or-update semantics
- * via {@code PUT}. A {@code DELETE} resets the user's preferences.</p>
  */
 @Slf4j
 @RestController
 @RequestMapping("/api/users/{userId}/preferences")
 @RequiredArgsConstructor
+@Tag(name = "Preferences", description = "Per-user trading preferences")
 public class UserPreferencesController {
 
 	private final UserPreferencesService preferencesService;
 
-	/**
-	 * Retrieves the preferences for a user.
-	 *
-	 * @param userId unique user identifier
-	 * @return the preferences or 404 if none are stored
-	 */
+	@Operation(summary = "Get preferences", description = "Get stored preferences for a user")
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "OK"),
+			@ApiResponse(responseCode = "404", description = "Not found")
+	})
 	@GetMapping
 	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> getPreferences(@PathVariable String userId) {
@@ -48,13 +50,11 @@ public class UserPreferencesController {
 						.body(Map.of("error", "No preferences found for user: " + userId)));
 	}
 
-	/**
-	 * Creates or updates preferences for a user.
-	 *
-	 * @param userId  unique user identifier
-	 * @param updates the preference values to set
-	 * @return the saved preferences
-	 */
+	@Operation(summary = "Save preferences", description = "Create or update preferences for a user")
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "Saved"),
+			@ApiResponse(responseCode = "500", description = "Server error")
+	})
 	@PutMapping
 	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> savePreferences(
@@ -71,12 +71,12 @@ public class UserPreferencesController {
 		}
 	}
 
-	/**
-	 * Deletes (resets) the preferences for a user.
-	 *
-	 * @param userId unique user identifier
-	 * @return 200 on success or 404 if no preferences exist
-	 */
+	@Operation(summary = "Delete preferences", description = "Delete (reset) preferences for a user")
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "Deleted"),
+			@ApiResponse(responseCode = "404", description = "Not found"),
+			@ApiResponse(responseCode = "500", description = "Server error")
+	})
 	@DeleteMapping
 	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<?> deletePreferences(@PathVariable String userId) {

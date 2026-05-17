@@ -18,27 +18,29 @@ import io.github.resilience4j.ratelimiter.annotation.RateLimiter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+
 /**
  * REST controller for managing user Coinbase credentials.
- *
- * <p>Provides endpoints for registering, checking, and removing
- * per-user Coinbase Advanced Trade API credentials.</p>
  */
 @Slf4j
 @RestController
 @RequestMapping("/api/credentials")
 @RequiredArgsConstructor
+@Tag(name = "Credentials", description = "Manage per-user Coinbase credentials")
 public class CredentialController {
 
 	private final ClientService clientService;
 
-	/**
-	 * Registers (or updates) Coinbase credentials for a user.
-	 *
-	 * @param userId      unique user identifier
-	 * @param requestBody must contain a {@code credentials} key with the raw credential blob
-	 * @return 200 on success, 400 if input is invalid
-	 */
+	@Operation(summary = "Register credentials", description = "Registers or updates Coinbase credentials for a user")
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "Credentials registered"),
+			@ApiResponse(responseCode = "400", description = "Invalid input"),
+			@ApiResponse(responseCode = "500", description = "Server error")
+	})
 	@PostMapping("/{userId}")
 	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<Map<String, String>> registerCredentials(
@@ -63,12 +65,11 @@ public class CredentialController {
 		}
 	}
 
-	/**
-	 * Checks whether credentials exist for a user.
-	 *
-	 * @param userId unique user identifier
-	 * @return JSON with {@code exists: true/false}
-	 */
+	@Operation(summary = "Check credentials exist", description = "Returns whether credentials exist for a user")
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "OK"),
+			@ApiResponse(responseCode = "500", description = "Server error")
+	})
 	@GetMapping("/{userId}/exists")
 	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<Map<String, Boolean>> hasCredentials(@PathVariable String userId) {
@@ -76,12 +77,11 @@ public class CredentialController {
 		return ResponseEntity.ok(Map.of("exists", exists));
 	}
 
-	/**
-	 * Removes the stored credentials for a user.
-	 *
-	 * @param userId unique user identifier
-	 * @return 200 on success
-	 */
+	@Operation(summary = "Remove credentials", description = "Removes stored credentials for a user")
+	@ApiResponses({
+			@ApiResponse(responseCode = "200", description = "Removed"),
+			@ApiResponse(responseCode = "500", description = "Server error")
+	})
 	@DeleteMapping("/{userId}")
 	@RateLimiter(name = "apiRateLimiter")
 	public ResponseEntity<Map<String, String>> removeCredentials(@PathVariable String userId) {
