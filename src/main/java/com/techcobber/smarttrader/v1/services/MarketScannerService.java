@@ -162,7 +162,7 @@ public class MarketScannerService {
 			log.debug("Fetched {} candles for {}", candles.size(), productId);
 
 			// Run price action analysis
-			TradeDecision decision = strategy.analyze(candles);
+			TradeDecision decision = strategy.analyze(candles, productId);
 			decision.setProductId(productId);
 
 			// Compute trend strength

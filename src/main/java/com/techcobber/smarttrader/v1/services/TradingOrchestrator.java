@@ -31,13 +31,13 @@ public class TradingOrchestrator {
 		PriceActionStrategy strategy = new PriceActionStrategy();
 		log.info("Using strategy: {}", strategy.getName());
 
-		TradeDecision decision = strategy.analyze(candles);
+		TradeDecision decision = strategy.analyze(candles, productId);
 		decision.setProductId(productId);
 
 		log.info("========================================");
 		log.info("Analysis complete for {}", productId);
-		log.info("Signal: {} | Confidence: {} | Trend: {}",
-				decision.getSignal(), decision.getConfidence(), decision.getTrendDirection());
+		log.info("Product: {} | Signal: {} | Confidence: {} | Trend: {}",
+				productId, decision.getSignal(), decision.getConfidence(), decision.getTrendDirection());
 		log.info("Detected patterns: {}", decision.getDetectedPatterns());
 		log.info("Support: {} | Resistance: {}",
 				decision.getNearestSupport(), decision.getNearestResistance());

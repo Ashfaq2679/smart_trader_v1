@@ -28,7 +28,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/credentials")
+@RequestMapping("/credentials")
+//@RequestMapping("/api/credentials")
 @RequiredArgsConstructor
 @Tag(name = "Credentials", description = "Manage per-user Coinbase credentials")
 public class CredentialController {
