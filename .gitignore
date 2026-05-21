@@ -4,6 +4,9 @@
 # Log file
 *.log
 
+# Ignore project logs directory
+/logs/
+
 # BlueJ files
 *.ctxt
 
@@ -33,6 +36,7 @@ target/
 .settings/
 .project
 .classpath
+.factorypath
 
 # Node.js / React UI
 smart-trader-ui/node_modules/
