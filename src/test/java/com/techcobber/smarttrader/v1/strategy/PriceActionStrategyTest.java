@@ -144,7 +144,7 @@ class PriceActionStrategyTest {
         @Test
         @DisplayName("Null candles returns HOLD with 0 confidence")
         void nullCandlesReturnsHold() {
-            TradeDecision decision = strategy.analyze(null);
+            TradeDecision decision = strategy.analyze(null,null);
 
             assertThat(decision.getSignal()).isEqualTo(Signal.HOLD);
             assertThat(decision.getConfidence()).isEqualTo(0.0);
@@ -159,7 +159,7 @@ class PriceActionStrategyTest {
                 candles.add(candle(100 + i, 101 + i, 103 + i, 99 + i, i));
             }
 
-            TradeDecision decision = strategy.analyze(candles);
+            TradeDecision decision = strategy.analyze(candles, "BTC-USDC");
 
             assertThat(decision.getSignal()).isEqualTo(Signal.HOLD);
             assertThat(decision.getConfidence()).isEqualTo(0.0);
@@ -173,7 +173,7 @@ class PriceActionStrategyTest {
                 candles.add(candle(100 + i, 101 + i, 103 + i, 99 + i, i));
             }
 
-            TradeDecision decision = strategy.analyze(candles);
+            TradeDecision decision = strategy.analyze(candles, "BTC-USDC");
 
             assertThat(decision.getTrendDirection()).isEqualTo("UNKNOWN");
         }
@@ -192,7 +192,7 @@ class PriceActionStrategyTest {
         void generatesBuySignalInUptrend() {
             List<MyCandle> candles = bullishUptrendCandles();
 
-            TradeDecision decision = strategy.analyze(candles);
+            TradeDecision decision = strategy.analyze(candles, "BTC-USDC");
 
             // With strong uptrend and bullish patterns, expect BUY
             assertThat(decision.getSignal()).isEqualTo(Signal.BUY);
@@ -203,7 +203,7 @@ class PriceActionStrategyTest {
         void buySignalHasPositiveConfidence() {
             List<MyCandle> candles = bullishUptrendCandles();
 
-            TradeDecision decision = strategy.analyze(candles);
+            TradeDecision decision = strategy.analyze(candles, "BTC-USDC");
 
             if (decision.getSignal() == Signal.BUY) {
                 assertThat(decision.getConfidence()).isGreaterThan(0.0);
@@ -224,7 +224,7 @@ class PriceActionStrategyTest {
         void generatesSellSignalInDowntrend() {
             List<MyCandle> candles = bearishDowntrendCandles();
 
-            TradeDecision decision = strategy.analyze(candles);
+            TradeDecision decision = strategy.analyze(candles, "BTC-USDC");
 
             assertThat(decision.getSignal()).isEqualTo(Signal.SELL);
         }
@@ -234,7 +234,7 @@ class PriceActionStrategyTest {
         void sellSignalHasPositiveConfidence() {
             List<MyCandle> candles = bearishDowntrendCandles();
 
-            TradeDecision decision = strategy.analyze(candles);
+            TradeDecision decision = strategy.analyze(candles, "BTC-USDC");
 
             if (decision.getSignal() == Signal.SELL) {
                 assertThat(decision.getConfidence()).isGreaterThan(0.0);
@@ -255,7 +255,7 @@ class PriceActionStrategyTest {
         void holdWhenNoConfluence() {
             List<MyCandle> candles = sidewaysCandles();
 
-            TradeDecision decision = strategy.analyze(candles);
+            TradeDecision decision = strategy.analyze(candles, "BTC-USDC");
 
             assertThat(decision.getSignal()).isEqualTo(Signal.HOLD);
             assertThat(decision.getConfidence()).isEqualTo(0.0);
@@ -275,7 +275,7 @@ class PriceActionStrategyTest {
         void detectedPatternsPopulated() {
             List<MyCandle> candles = bullishUptrendCandles();
 
-            TradeDecision decision = strategy.analyze(candles);
+            TradeDecision decision = strategy.analyze(candles, "BTC-USDC");
 
             assertThat(decision.getDetectedPatterns()).isNotNull();
             // With 25+ candles, at least some single-candle patterns should be detected
@@ -287,7 +287,7 @@ class PriceActionStrategyTest {
         void confidenceBounded() {
             List<MyCandle> candles = bullishUptrendCandles();
 
-            TradeDecision decision = strategy.analyze(candles);
+            TradeDecision decision = strategy.analyze(candles, "BTC-USDC");
 
             assertThat(decision.getConfidence()).isBetween(0.0, 1.0);
         }
@@ -297,7 +297,7 @@ class PriceActionStrategyTest {
         void reasoningContainsInfo() {
             List<MyCandle> candles = bullishUptrendCandles();
 
-            TradeDecision decision = strategy.analyze(candles);
+            TradeDecision decision = strategy.analyze(candles, "BTC-USDC");
 
             assertThat(decision.getReasoning()).isNotNull();
             assertThat(decision.getReasoning()).contains("Trend:");
@@ -309,7 +309,7 @@ class PriceActionStrategyTest {
         void trendDirectionSet() {
             List<MyCandle> candles = bullishUptrendCandles();
 
-            TradeDecision decision = strategy.analyze(candles);
+            TradeDecision decision = strategy.analyze(candles, "BTC-USDC");
 
             assertThat(decision.getTrendDirection()).isNotNull();
             assertThat(decision.getTrendDirection()).isIn("UP", "DOWN", "SIDEWAYS");
@@ -320,7 +320,7 @@ class PriceActionStrategyTest {
         void timestampSet() {
             List<MyCandle> candles = bullishUptrendCandles();
 
-            TradeDecision decision = strategy.analyze(candles);
+            TradeDecision decision = strategy.analyze(candles, "BTC-USDC");
 
             assertThat(decision.getTimestamp()).isNotNull();
         }

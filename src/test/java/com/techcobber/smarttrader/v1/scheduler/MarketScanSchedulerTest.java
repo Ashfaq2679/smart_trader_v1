@@ -1,7 +1,17 @@
 package com.techcobber.smarttrader.v1.scheduler;
 
-import java.time.LocalDateTime;
-import java.util.Collections;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+
 import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -13,25 +23,19 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.coinbase.advanced.client.CoinbaseAdvancedClient;
-import com.coinbase.advanced.errors.CoinbaseAdvancedException;
 import com.coinbase.advanced.model.common.Granularity;
-import com.techcobber.smarttrader.v1.models.CoinScanResult;
 import com.techcobber.smarttrader.v1.models.ListCandles;
 import com.techcobber.smarttrader.v1.models.MyCandle;
-import com.techcobber.smarttrader.v1.models.TradeDecision;
-import com.techcobber.smarttrader.v1.models.TradeDecision.Signal;
+import com.techcobber.smarttrader.v1.repositories.CoinsRepository;
 import com.techcobber.smarttrader.v1.services.CoinbaseClientFactory;
 import com.techcobber.smarttrader.v1.services.CoinbasePublicServiceImpl;
+import com.techcobber.smarttrader.v1.services.TradingOrchestrator;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
 
 /**
- * Unit tests for {@link MarketScanScheduler}.
- * Uses Mockito — no database, exchange API, or credentials required.
+ * Unit tests for {@link MarketScanScheduler}. Uses Mockito — no database,
+ * exchange API, or credentials required.
  */
 @ExtendWith(MockitoExtension.class)
 class MarketScanSchedulerTest {
@@ -45,11 +49,14 @@ class MarketScanSchedulerTest {
 	private CircuitBreakerRegistry circuitBreakerRegistry;
 
 	private MarketScanScheduler scheduler;
+	private TradingOrchestrator tradingOrchestrator; // Not used in current tests but required for constructor
+	private CoinsRepository coinsRepository;
 
 	@BeforeEach
 	void setUp() {
 		circuitBreakerRegistry = CircuitBreakerRegistry.ofDefaults();
-		scheduler = new MarketScanScheduler(coinbaseClientFactory, circuitBreakerRegistry);
+		scheduler = new MarketScanScheduler(coinbaseClientFactory, circuitBreakerRegistry, tradingOrchestrator,
+				coinsRepository);
 	}
 
 	// =======================================================================
@@ -107,8 +114,7 @@ class MarketScanSchedulerTest {
 			when(coinbaseClientFactory.getClientForUser("unknown"))
 					.thenThrow(new IllegalArgumentException("No credentials found for user: unknown"));
 
-			assertThatThrownBy(() -> scheduler.runScanNow("unknown", 5))
-					.isInstanceOf(IllegalArgumentException.class)
+			assertThatThrownBy(() -> scheduler.runScanNow("unknown", 5)).isInstanceOf(IllegalArgumentException.class)
 					.hasMessageContaining("No credentials found");
 		}
 

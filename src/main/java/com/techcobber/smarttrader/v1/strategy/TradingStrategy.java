@@ -7,7 +7,7 @@ import com.techcobber.smarttrader.v1.models.TradeDecision;
 
 public interface TradingStrategy {
 
-	TradeDecision analyze(List<MyCandle> candles);
+	TradeDecision analyze(List<MyCandle> candles, String productId);
 
 	String getName();
 }

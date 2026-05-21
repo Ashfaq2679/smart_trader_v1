@@ -35,7 +35,7 @@ public class PriceActionStrategy implements TradingStrategy {
 	}
 
 	@Override
-	public TradeDecision analyze(List<MyCandle> candles) {
+	public TradeDecision analyze(List<MyCandle> candles, String productId) {
 		log.info("=== PriceAction Strategy Analysis ===");
 		log.info("Analyzing {} candles", candles == null ? 0 : candles.size());
 
@@ -129,8 +129,8 @@ public class PriceActionStrategy implements TradingStrategy {
 		String reasoning = buildReasoning(signal, trend, detectedPatterns,
 				currentPrice, nearestSupport, nearestResistance);
 
-		log.info("=== Signal: {} | Confidence: {} | Patterns: {} | Reasoning: {} ===",
-				signal, String.format("%.2f", confidence), patternNames, reasoning);
+		log.info("=== Product: {} | Signal: {} | Confidence: {} | Patterns: {} | Reasoning: {} ===",
+				productId ,signal, String.format("%.2f", confidence), patternNames, reasoning);
 
 		return TradeDecision.builder()
 				.signal(signal)

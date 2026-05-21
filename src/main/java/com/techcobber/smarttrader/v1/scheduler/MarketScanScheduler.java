@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -13,9 +15,12 @@ import com.coinbase.advanced.model.common.Granularity;
 import com.techcobber.smarttrader.v1.models.CoinScanResult;
 import com.techcobber.smarttrader.v1.models.ListCandles;
 import com.techcobber.smarttrader.v1.models.MyCandle;
+import com.techcobber.smarttrader.v1.models.TradeDecision;
+import com.techcobber.smarttrader.v1.repositories.CoinsRepository;
 import com.techcobber.smarttrader.v1.services.CoinbaseClientFactory;
 import com.techcobber.smarttrader.v1.services.CoinbasePublicServiceImpl;
 import com.techcobber.smarttrader.v1.services.MarketScannerService;
+import com.techcobber.smarttrader.v1.services.TradingOrchestrator;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.RequiredArgsConstructor;
@@ -25,20 +30,26 @@ import lombok.extern.slf4j.Slf4j;
  * Scheduler that periodically runs market scans using
  * {@link MarketScannerService} and caches the latest results in memory.
  *
- * <p>The scan runs every hour by default (configurable via
+ * <p>
+ * The scan runs every hour by default (configurable via
  * {@code scanner.interval.ms} property). Results are available via
- * {@link #getLatestResults()} and can also be triggered on demand
- * via {@link #runScanNow(String, int)}.</p>
+ * {@link #getLatestResults()} and can also be triggered on demand via
+ * {@link #runScanNow(String, int)}.
+ * </p>
  *
- * <p>Each scan requires a userId to resolve the user's Coinbase client.
- * The scheduled task uses the configured default user
- * ({@code scanner.default.userId} property).</p>
+ * <p>
+ * Each scan requires a userId to resolve the user's Coinbase client. The
+ * scheduled task uses the configured default user
+ * ({@code scanner.default.userId} property).
+ * </p>
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class MarketScanScheduler {
 
+	@Value("${APP_DEFAULT_USER}")
+	private String defaultUserId;
 	static final int DEFAULT_LIMIT = 10;
 	private static final int CANDLE_COUNT = 100;
 
@@ -46,17 +57,19 @@ public class MarketScanScheduler {
 	private final CircuitBreakerRegistry circuitBreakerRegistry;
 
 	private volatile List<CoinScanResult> latestResults = Collections.emptyList();
+	private final TradingOrchestrator tradingOrchestrator;
+	private final CoinsRepository coinsRepository;
 
 	/**
-	 * Scheduled task — runs every hour (3 600 000 ms).
-	 * The initial delay allows the application to fully start before the first scan.
+	 * Scheduled task — runs every hour (3 600 000 ms). The initial delay allows the
+	 * application to fully start before the first scan.
 	 *
-	 * <p>Uses a well-known "system" user. If no credentials are stored for
-	 * this user the scan is silently skipped rather than crashing the app.</p>
+	 * <p>
+	 * Uses a well-known "system" user. If no credentials are stored for this user
+	 * the scan is silently skipped rather than crashing the app.
+	 * </p>
 	 */
-	@Scheduled(
-			fixedDelayString = "${scanner.interval.ms:3600000}",
-			initialDelayString = "${scanner.initial.delay.ms:60000}")
+	@Scheduled(fixedDelayString = "${scanner.interval.ms:3600000}", initialDelayString = "${scanner.initial.delay.ms:60000}")
 	public void scheduledScan() {
 		log.info("Scheduled market scan starting…");
 		try {
@@ -104,19 +117,59 @@ public class MarketScanScheduler {
 	 * @return list of candles, or empty list if unavailable
 	 * @throws CoinbaseAdvancedException if the exchange API call fails
 	 */
-	public List<MyCandle> fetchCandlesForProduct(String userId, String productId)
-			throws CoinbaseAdvancedException {
+	public List<MyCandle> fetchCandlesForProduct(String userId, String productId) throws CoinbaseAdvancedException {
 		CoinbasePublicServiceImpl publicService = createPublicService(userId);
 
 		long endTime = Instant.now().getEpochSecond();
 		long startTime = endTime - 3600L * CANDLE_COUNT;
 
-		ListCandles listCandles = publicService.fetchCandles(
-				productId, startTime, endTime, Granularity.ONE_HOUR);
+		ListCandles listCandles = publicService.fetchCandles(productId, startTime, endTime, Granularity.ONE_HOUR);
 		if (listCandles == null || listCandles.getCandles() == null) {
 			return Collections.emptyList();
 		}
 		return listCandles.getCandles();
+	}
+
+	@Scheduled(fixedDelayString = "${scanner.candles.interval.ms:3600000}", initialDelayString = "${scanner.candles.initial.delay.ms:120000}")
+	public void scheduledCandleFetch() {
+		log.info("Scheduled candle fetch starting…");
+		List<String> productIds = coinsRepository.findAll().stream().map(coin -> coin.productId()).toList();
+		try {
+			productIds.forEach(pId -> {
+				List<MyCandle> candles = fetchCandlesForProduct(pId);
+				TradeDecision decision = tradingOrchestrator.executeAnalysis(candles, pId);
+				log.info("Scheduled candle fetch completed for {}. Trade decision: {}", pId, decision);
+			});
+
+		} catch (Exception e) {
+			log.error("Scheduled candle fetch failed: {}", e.getMessage(), e);
+		}
+	}
+
+	private List<MyCandle> fetchCandlesForProduct(String productId) throws CoinbaseAdvancedException {
+		if (defaultUserId == null || defaultUserId.isBlank()) {
+			log.warn("No default user configured for fetching candles. Returning empty list.");
+			return Collections.emptyList();
+		}
+		CoinbasePublicServiceImpl publicService = createPublicService(defaultUserId);
+
+		long endTime = Instant.now().getEpochSecond();
+		long startTime = endTime - 3600L * CANDLE_COUNT;
+		ListCandles listCandles = null;
+
+		log.info("Fetching candles for product {}", productId);
+		try {
+			listCandles = publicService.fetchCandles(productId, startTime, endTime, Granularity.ONE_HOUR);
+		} catch (Exception e) {
+			log.error("Failed to fetch candles for product {}: {}", productId, e.getMessage());
+		}
+		if (listCandles == null || listCandles.getCandles() == null) {
+			return Collections.emptyList();
+		}
+		log.info("Fetched {} candles for product BTC-USDC", listCandles.getCandles().size());
+		// Sort candles by start time ascending (newest last) before returning
+		return listCandles.getCandles().stream().sorted((c1, c2) -> Long.compare(c1.getStart(), c2.getStart()))
+				.toList();
 	}
 
 	/**
@@ -124,7 +177,6 @@ public class MarketScanScheduler {
 	 */
 	CoinbasePublicServiceImpl createPublicService(String userId) {
 		CoinbaseAdvancedClient client = coinbaseClientFactory.getClientForUser(userId);
-		return new CoinbasePublicServiceImpl(client,
-				circuitBreakerRegistry.circuitBreaker("coinbasePublicService"));
+		return new CoinbasePublicServiceImpl(client, circuitBreakerRegistry.circuitBreaker("coinbasePublicService"));
 	}
 }
