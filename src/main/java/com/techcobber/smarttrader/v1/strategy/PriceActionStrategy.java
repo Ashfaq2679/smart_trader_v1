@@ -250,10 +250,7 @@ public class PriceActionStrategy implements TradingStrategy {
 				.filter(p -> (signal == Signal.BUY && p.getBias() == PatternBias.BULLISH)
 						|| (signal == Signal.SELL && p.getBias() == PatternBias.BEARISH))
 				.count();
-		boolean hasStrongPattern = patterns.stream().anyMatch(p ->
-				p.getName().contains("ENGULFING") || p.getName().contains("MORNING_STAR")
-						|| p.getName().contains("EVENING_STAR") || p.getName().contains("THREE_WHITE")
-						|| p.getName().contains("THREE_BLACK") || p.getName().contains("MARUBOZU"));
+		boolean hasStrongPattern = PatternUtils.hasStrongPattern(patterns);
 		confidence += Math.min(0.25, relevantPatterns * 0.08);
 		if (hasStrongPattern) {
 			confidence += 0.1;
