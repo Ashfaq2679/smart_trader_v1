@@ -17,6 +17,7 @@ import com.techcobber.smarttrader.v1.models.MyCandle;
 import com.techcobber.smarttrader.v1.models.TradeDecision;
 import com.techcobber.smarttrader.v1.strategy.PriceActionStrategy;
 import com.techcobber.smarttrader.v1.strategy.TrendAnalyzer;
+import com.techcobber.smarttrader.v1.strategy.PatternUtils;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -179,11 +180,7 @@ public class MarketScannerService {
 			if (tradeDecisionService != null) {
 				boolean hasStrongPattern = false;
 				if (decision.getDetectedPatterns() != null) {
-					hasStrongPattern = decision.getDetectedPatterns().stream().anyMatch(name ->
-						name.contains("ENGULFING") || name.contains("MORNING_STAR")
-							|| name.contains("EVENING_STAR") || name.contains("THREE_WHITE")
-							|| name.contains("THREE_BLACK") || name.contains("MARUBOZU")
-					);
+					hasStrongPattern = PatternUtils.hasStrongPatternByNames(decision.getDetectedPatterns());
 				}
 				if (decision.getConfidence() > 0.70 && hasStrongPattern) {
 					try {
