@@ -20,7 +20,9 @@ import com.techcobber.smarttrader.v1.repositories.CoinsRepository;
 import com.techcobber.smarttrader.v1.services.CoinbaseClientFactory;
 import com.techcobber.smarttrader.v1.services.CoinbasePublicServiceImpl;
 import com.techcobber.smarttrader.v1.services.MarketScannerService;
+import com.techcobber.smarttrader.v1.services.TradeDecisionService;
 import com.techcobber.smarttrader.v1.services.TradingOrchestrator;
+import com.techcobber.smarttrader.v1.strategy.PatternUtils;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.RequiredArgsConstructor;
@@ -59,6 +61,7 @@ public class MarketScanScheduler {
 	private volatile List<CoinScanResult> latestResults = Collections.emptyList();
 	private final TradingOrchestrator tradingOrchestrator;
 	private final CoinsRepository coinsRepository;
+	private final TradeDecisionService tradeDecisionService; // optional, may be null
 
 	/**
 	 * Scheduled task — runs every hour (3 600 000 ms). The initial delay allows the
@@ -139,6 +142,22 @@ public class MarketScanScheduler {
 				List<MyCandle> candles = fetchCandlesForProduct(pId);
 				TradeDecision decision = tradingOrchestrator.executeAnalysis(candles, pId);
 				log.info("Scheduled candle fetch completed for {}. Trade decision: {}", pId, decision);
+				// Persist decision when confidence > 0.70 and a strong pattern exists
+				if (tradeDecisionService != null) {
+					boolean hasStrongPattern = false;
+					if (decision.getDetectedPatterns() != null) {
+						hasStrongPattern = PatternUtils.hasStrongPatternByNames(decision.getDetectedPatterns());
+					}
+					if (decision.getConfidence() > 0.70 && hasStrongPattern) {
+						try {
+							tradeDecisionService.save(decision);
+							log.info("Persisted TradeDecision for {} (confidence: {})", pId, decision.getConfidence());
+						} catch (Exception e) {
+							log.warn("Failed to persist TradeDecision for {}: {}", pId, e.getMessage());
+						}
+					}
+				}
+
 			});
 
 		} catch (Exception e) {

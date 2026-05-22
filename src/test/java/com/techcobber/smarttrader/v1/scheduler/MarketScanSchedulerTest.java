@@ -29,6 +29,7 @@ import com.techcobber.smarttrader.v1.models.MyCandle;
 import com.techcobber.smarttrader.v1.repositories.CoinsRepository;
 import com.techcobber.smarttrader.v1.services.CoinbaseClientFactory;
 import com.techcobber.smarttrader.v1.services.CoinbasePublicServiceImpl;
+import com.techcobber.smarttrader.v1.services.TradeDecisionService;
 import com.techcobber.smarttrader.v1.services.TradingOrchestrator;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
@@ -51,12 +52,13 @@ class MarketScanSchedulerTest {
 	private MarketScanScheduler scheduler;
 	private TradingOrchestrator tradingOrchestrator; // Not used in current tests but required for constructor
 	private CoinsRepository coinsRepository;
+	private TradeDecisionService tradeDecisionService;
 
 	@BeforeEach
 	void setUp() {
 		circuitBreakerRegistry = CircuitBreakerRegistry.ofDefaults();
 		scheduler = new MarketScanScheduler(coinbaseClientFactory, circuitBreakerRegistry, tradingOrchestrator,
-				coinsRepository);
+				coinsRepository, tradeDecisionService);
 	}
 
 	// =======================================================================
