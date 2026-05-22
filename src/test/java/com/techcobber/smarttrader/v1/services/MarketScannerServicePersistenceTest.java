@@ -3,6 +3,7 @@ package com.techcobber.smarttrader.v1.services;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
@@ -102,7 +103,7 @@ class MarketScannerServicePersistenceTest {
                     .build();
 
             when(mockedStrategy.analyze(any(), anyString())).thenReturn(decision);
-            when(mockedTrendAnalyzer.analyzeTrend(any(), anyLong())).thenReturn(new TrendAnalyzer.TrendResult(TrendDirection.UP, 0.9, "desc"));
+            when(mockedTrendAnalyzer.analyzeTrend(any(), anyInt())).thenReturn(new TrendAnalyzer.TrendResult(TrendDirection.UP, 0.9, "desc"));
 
             // Act
             var result = scanner.analyseProduct(p, 0L, 1L, Granularity.ONE_HOUR, 1000.0);
@@ -134,7 +135,7 @@ class MarketScannerServicePersistenceTest {
                     .build();
 
             when(mockedStrategy.analyze(any(), anyString())).thenReturn(decision);
-            when(mockedTrendAnalyzer.analyzeTrend(any(), anyLong())).thenReturn(new TrendAnalyzer.TrendResult(TrendDirection.UP, 0.5, "desc"));
+            when(mockedTrendAnalyzer.analyzeTrend(any(), anyInt())).thenReturn(new TrendAnalyzer.TrendResult(TrendDirection.UP, 0.5, "desc"));
 
             var result = scanner.analyseProduct(p, 0L, 1L, Granularity.ONE_HOUR, 1000.0);
 
@@ -160,7 +161,7 @@ class MarketScannerServicePersistenceTest {
                     .build();
 
             when(mockedStrategy.analyze(any(), anyString())).thenReturn(decision);
-            when(mockedTrendAnalyzer.analyzeTrend(any(), anyLong())).thenReturn(new TrendAnalyzer.TrendResult(TrendDirection.UP, 0.7, "desc"));
+            when(mockedTrendAnalyzer.analyzeTrend(any(), anyInt())).thenReturn(new TrendAnalyzer.TrendResult(TrendDirection.UP, 0.7, "desc"));
 
             var result = scanner.analyseProduct(p, 0L, 1L, Granularity.ONE_HOUR, 1000.0);
 
@@ -186,7 +187,7 @@ class MarketScannerServicePersistenceTest {
                     .build();
 
             when(mockedStrategy.analyze(any(), anyString())).thenReturn(decision);
-            when(mockedTrendAnalyzer.analyzeTrend(any(), anyLong())).thenReturn(new TrendAnalyzer.TrendResult(TrendDirection.UP, 0.8, "desc"));
+            when(mockedTrendAnalyzer.analyzeTrend(any(), anyInt())).thenReturn(new TrendAnalyzer.TrendResult(TrendDirection.UP, 0.8, "desc"));
 
             doThrow(new RuntimeException("db down")).when(tradeDecisionService).save(any());
 
