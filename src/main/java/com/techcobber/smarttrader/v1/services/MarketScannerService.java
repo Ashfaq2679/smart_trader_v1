@@ -45,11 +45,21 @@ public class MarketScannerService {
 	private final CoinbasePublicServiceImpl publicService;
 	private final PriceActionStrategy strategy;
 	private final TrendAnalyzer trendAnalyzer;
+	private final TradeDecisionService tradeDecisionService; // optional, may be null
 
 	public MarketScannerService(CoinbasePublicServiceImpl publicService) {
+		this(publicService, new PriceActionStrategy(), new TrendAnalyzer(), null);
+	}
+
+	// New constructor to allow injecting a strategy, trend analyzer and decision service (for tests and persistence)
+	public MarketScannerService(CoinbasePublicServiceImpl publicService,
+						 PriceActionStrategy strategy,
+						 TrendAnalyzer trendAnalyzer,
+						 TradeDecisionService tradeDecisionService) {
 		this.publicService = publicService;
-		this.strategy = new PriceActionStrategy();
-		this.trendAnalyzer = new TrendAnalyzer();
+		this.strategy = strategy;
+		this.trendAnalyzer = trendAnalyzer;
+		this.tradeDecisionService = tradeDecisionService;
 	}
 
 	/**
@@ -164,6 +174,26 @@ public class MarketScannerService {
 			// Run price action analysis
 			TradeDecision decision = strategy.analyze(candles, productId);
 			decision.setProductId(productId);
+
+			// Persist decision when confidence > 0.70 and a strong pattern exists
+			if (tradeDecisionService != null) {
+				boolean hasStrongPattern = false;
+				if (decision.getDetectedPatterns() != null) {
+					hasStrongPattern = decision.getDetectedPatterns().stream().anyMatch(name ->
+						name.contains("ENGULFING") || name.contains("MORNING_STAR")
+							|| name.contains("EVENING_STAR") || name.contains("THREE_WHITE")
+							|| name.contains("THREE_BLACK") || name.contains("MARUBOZU")
+					);
+				}
+				if (decision.getConfidence() > 0.70 && hasStrongPattern) {
+					try {
+						tradeDecisionService.save(decision);
+						log.info("Persisted TradeDecision for {} (confidence: {})", productId, decision.getConfidence());
+					} catch (Exception e) {
+						log.warn("Failed to persist TradeDecision for {}: {}", productId, e.getMessage());
+					}
+				}
+			}
 
 			// Compute trend strength
 			TrendAnalyzer.TrendResult trendResult = trendAnalyzer.analyzeTrend(candles, TREND_LOOKBACK);
