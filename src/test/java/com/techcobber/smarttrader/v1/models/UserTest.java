@@ -1,10 +1,10 @@
 package com.techcobber.smarttrader.v1.models;
 
-import java.time.Instant;
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.time.LocalDateTime;
 
 import org.junit.jupiter.api.Test;
-
-import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Unit tests for {@link User} model.
@@ -28,14 +28,14 @@ class UserTest {
     @Test
     void setAndGetDisplayName() {
         User user = new User();
-        user.setDisplayName("John Doe");
-        assertThat(user.getDisplayName()).isEqualTo("John Doe");
+        user.setUserName("John Doe");
+        assertThat(user.getUserName()).isEqualTo("John Doe");
     }
 
     @Test
     void setAndGetTimestamps() {
         User user = new User();
-        Instant now = Instant.now();
+        LocalDateTime now = LocalDateTime.now();
         user.setCreatedAt(now);
         user.setUpdatedAt(now.plusSeconds(60));
 
@@ -49,7 +49,7 @@ class UserTest {
 
         assertThat(user.getUserId()).isNull();
         assertThat(user.getEmail()).isNull();
-        assertThat(user.getDisplayName()).isNull();
+        assertThat(user.getUserName()).isNull();
         assertThat(user.getCreatedAt()).isNull();
         assertThat(user.getUpdatedAt()).isNull();
         assertThat(user.isEnabled()).isFalse();
@@ -85,7 +85,7 @@ class UserTest {
         User user = new User();
         user.setUserId("user-xyz");
         user.setEmail("test@example.com");
-        user.setDisplayName("Test");
+        user.setUserName("Test");
 
         String result = user.toString();
 

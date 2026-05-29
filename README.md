@@ -119,6 +119,73 @@ spring.security.oauth2.resourceserver.jwt.jwk-set-uri=${OAUTH2_JWK_SET_URI}
 
 ---
 
+## Redis (Optional) - Local development and Docker
+
+Smart Trader can use Redis for lightweight caching (qty aggregates, recent-orders lists) to reduce DB load. Redis is optional but recommended for production-like behavior.
+
+### Run via Docker (recommended for development)
+
+Quick start using the official Redis image:
+
+```bash
+# starts Redis on localhost:6379
+docker run -d --name smarttrader-redis -p 6379:6379 redis:7
+```
+
+To run a Redis container with persistence (data saved to ./redis-data):
+
+```bash
+mkdir -p ./redis-data
+docker run -d --name smarttrader-redis -p 6379:6379 -v $(pwd)/redis-data:/data redis:7 redis-server --appendonly yes
+```
+
+To stop and remove the container:
+
+```bash
+docker stop smarttrader-redis && docker rm smarttrader-redis
+```
+
+### Local installation (Linux / macOS / Windows)
+
+- macOS (Homebrew):
+  - brew install redis
+  - brew services start redis
+
+- Linux (Debian/Ubuntu):
+  - sudo apt update
+  - sudo apt install redis-server
+  - sudo systemctl enable --now redis-server
+
+- Windows:
+  - Use Microsoft-supported WSL2 (Ubuntu) and install via Linux instructions, or download Redis for Windows from Memurai or MS build variants. Running via Docker is simplest on Windows.
+
+Verify Redis is running:
+
+```bash
+redis-cli ping
+# should reply: PONG
+```
+
+### Configuration for Smart Trader
+
+Set Redis connection properties in application.properties or application.yml. Example application.properties entries:
+
+```properties
+spring.redis.host=localhost
+spring.redis.port=6379
+# spring.redis.password=yourpassword   # set if you secure Redis
+```
+
+The project contains a RedisConfig that wires a LettuceConnectionFactory and a StringRedisTemplate bean. Restart the application after configuring Redis.
+
+### Notes and troubleshooting
+
+- If Redis is unavailable, Smart Trader falls back to DB aggregations for cache misses, but performance may be reduced.
+- On Windows prefer Docker or WSL2 to avoid unsupported native builds.
+- For production use consider managed Redis (AWS ElastiCache) and secure access between app and Redis (VPC, auth/ACLs, TLS).
+
+---
+
 ## API Endpoints
 
 | Method | Endpoint | Description |

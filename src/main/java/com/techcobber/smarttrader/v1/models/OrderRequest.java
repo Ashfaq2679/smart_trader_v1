@@ -5,6 +5,7 @@ import java.util.Map;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
+import lombok.Builder;
 import lombok.Data;
 
 /**
@@ -16,6 +17,7 @@ import lombok.Data;
  * quote currency.</p>
  */
 @Data
+@Builder
 public class OrderRequest {
 
 	/** Trading pair, e.g. "BTC-USDC". Required. */

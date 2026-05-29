@@ -17,4 +17,8 @@ public interface OrderRepository extends MongoRepository<Order, String> {
 	List<Order> findByUserIdAndProductIdOrderByCreatedAtDesc(String userId, String productId);
 
 	Optional<Order> findByCoinbaseOrderId(String coinbaseOrderId);
+	
+	List<Order> findByProductId(String productId);
+	
+	public List<Order> findByProductIdAndSide(String productId, String side);
 }

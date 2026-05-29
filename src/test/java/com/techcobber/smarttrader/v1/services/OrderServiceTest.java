@@ -3,9 +3,12 @@ package com.techcobber.smarttrader.v1.services;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -59,38 +62,42 @@ class OrderServiceTest {
 		@Test
 		@DisplayName("Throws when productId is missing")
 		void throwsWhenProductIdMissing() {
-			OrderRequest req = new OrderRequest();
-			req.setSide("BUY");
-			req.setOrderType("MARKET");
-			req.setBaseSize(1.0);
+			OrderRequest req = OrderRequest.builder()
+					 .side("BUY")
+					 .orderType("MARKET")
+					 .baseSize(1.0)
+					 .build();
 
-			assertThatThrownBy(() -> orderService.placeOrder("user-1", req))
-					.isInstanceOf(IllegalArgumentException.class)
-					.hasMessageContaining("productId");
+				assertThatThrownBy(() -> orderService.placeOrder("user-1", req))
+						.isInstanceOf(IllegalArgumentException.class)
+						.hasMessageContaining("productId");
 		}
 
 		@Test
 		@DisplayName("Throws when side is invalid")
 		void throwsWhenSideInvalid() {
-			OrderRequest req = new OrderRequest();
-			req.setProductId("BTC-USDC");
-			req.setSide("HOLD");
-			req.setOrderType("MARKET");
-			req.setBaseSize(1.0);
+			OrderRequest req = OrderRequest.builder()
+				.productId("BTC-USDC")
+				.side("HOLD")
+				.orderType("MARKET")
+				.baseSize(1.0)
+				.build();
 
-			assertThatThrownBy(() -> orderService.placeOrder("user-1", req))
-					.isInstanceOf(IllegalArgumentException.class)
-					.hasMessageContaining("side must be BUY or SELL");
-		}
+				assertThatThrownBy(() -> orderService.placeOrder("user-1", req))
+						.isInstanceOf(IllegalArgumentException.class)
+						.hasMessageContaining("side must be BUY or SELL");
+			req.setProductId("BTC-USDC");
+			}
 
 		@Test
 		@DisplayName("Throws when orderType is invalid")
 		void throwsWhenOrderTypeInvalid() {
-			OrderRequest req = new OrderRequest();
-			req.setProductId("BTC-USDC");
-			req.setSide("BUY");
-			req.setOrderType("STOP");
-			req.setBaseSize(1.0);
+			OrderRequest req = OrderRequest.builder()
+				.productId("BTC-USDC")
+				.side("BUY")
+				.orderType("STOP")
+				.baseSize(1.0)
+				.build();
 
 			assertThatThrownBy(() -> orderService.placeOrder("user-1", req))
 					.isInstanceOf(IllegalArgumentException.class)
@@ -100,12 +107,12 @@ class OrderServiceTest {
 		@Test
 		@DisplayName("Throws when LIMIT order missing baseSize")
 		void throwsWhenLimitMissingBaseSize() {
-			OrderRequest req = new OrderRequest();
-			req.setProductId("BTC-USDC");
-			req.setSide("BUY");
-			req.setOrderType("LIMIT");
-			req.setLimitPrice(50000.0);
-
+			OrderRequest req = OrderRequest.builder()
+				.productId("BTC-USDC")
+				.side("BUY")
+				.orderType("LIMIT")
+				.limitPrice(50000.0)
+				.build();
 			assertThatThrownBy(() -> orderService.placeOrder("user-1", req))
 					.isInstanceOf(IllegalArgumentException.class)
 					.hasMessageContaining("baseSize");
@@ -114,28 +121,28 @@ class OrderServiceTest {
 		@Test
 		@DisplayName("Throws when LIMIT order missing limitPrice")
 		void throwsWhenLimitMissingPrice() {
-			OrderRequest req = new OrderRequest();
-			req.setProductId("BTC-USDC");
-			req.setSide("BUY");
-			req.setOrderType("LIMIT");
-			req.setBaseSize(1.0);
-
-			assertThatThrownBy(() -> orderService.placeOrder("user-1", req))
-					.isInstanceOf(IllegalArgumentException.class)
-					.hasMessageContaining("limitPrice");
+			OrderRequest req = OrderRequest.builder()
+				.productId("BTC-USDC")
+				.side("BUY")
+				.orderType("LIMIT")
+				.baseSize(1.0)
+				.build();
+				assertThatThrownBy(() -> orderService.placeOrder("user-1", req))
+						.isInstanceOf(IllegalArgumentException.class)
+						.hasMessageContaining("limitPrice");
 		}
 
 		@Test
 		@DisplayName("Throws when MARKET order has no size")
 		void throwsWhenMarketNoSize() {
-			OrderRequest req = new OrderRequest();
-			req.setProductId("BTC-USDC");
-			req.setSide("BUY");
-			req.setOrderType("MARKET");
-
-			assertThatThrownBy(() -> orderService.placeOrder("user-1", req))
-					.isInstanceOf(IllegalArgumentException.class)
-					.hasMessageContaining("baseSize or quoteSize");
+			OrderRequest req = OrderRequest.builder()
+				.productId("BTC-USDC")
+				.side("BUY")
+				.orderType("MARKET")
+				.build();
+				assertThatThrownBy(() -> orderService.placeOrder("user-1", req))
+						.isInstanceOf(IllegalArgumentException.class)
+						.hasMessageContaining("baseSize or quoteSize");
 		}
 	}
 
@@ -188,11 +195,12 @@ class OrderServiceTest {
 		@Test
 		@DisplayName("Market BUY order with quoteSize succeeds")
 		void marketBuyQuoteSize() throws Exception {
-			OrderRequest req = new OrderRequest();
-			req.setProductId("ETH-USDC");
-			req.setSide("BUY");
-			req.setOrderType("MARKET");
-			req.setQuoteSize(1000.0);
+			OrderRequest req = OrderRequest.builder()
+				.productId("ETH-USDC")
+				.side("BUY")
+				.orderType("MARKET")
+				.quoteSize(1000.0)
+				.build();
 
 			CreateOrderResponse cbResponse = mockSuccessResponse("cb-order-2");
 
@@ -216,15 +224,15 @@ class OrderServiceTest {
 		@Test
 		@DisplayName("Limit SELL order succeeds")
 		void limitSellOrder() throws Exception {
-			OrderRequest req = new OrderRequest();
-			req.setProductId("BTC-USDC");
-			req.setSide("SELL");
-			req.setOrderType("LIMIT");
-			req.setBaseSize(0.1);
-			req.setLimitPrice(60000.0);
-			req.setDecisionFactors(Map.of("strategy", "price_action"));
-			req.setComments("Take profit");
-
+			OrderRequest req = OrderRequest.builder()
+				.productId("BTC-USDC")
+				.side("SELL")
+				.orderType("LIMIT")
+				.baseSize(0.1)
+				.limitPrice(60000.0)
+				.decisionFactors(Map.of("strategy", "price_action"))
+				.comments("Take profit")
+				.build();
 			CreateOrderResponse cbResponse = mockSuccessResponse("cb-order-3");
 
 			try (MockedStatic<CoinbaseAdvancedServiceFactory> factory =
@@ -545,11 +553,12 @@ class OrderServiceTest {
 	// =======================================================================
 
 	private OrderRequest buildMarketBuyRequest() {
-		OrderRequest req = new OrderRequest();
-		req.setProductId("BTC-USDC");
-		req.setSide("BUY");
-		req.setOrderType("MARKET");
-		req.setBaseSize(0.5);
+		OrderRequest req = OrderRequest.builder()
+				.productId("BTC-USDC")
+				.side("BUY")
+				.orderType("MARKET")
+				.baseSize(0.5)
+				.build();
 		return req;
 	}
 
@@ -576,7 +585,7 @@ class OrderServiceTest {
 		order.setSide("BUY");
 		order.setOrderType("MARKET");
 		order.setStatus("PENDING");
-		order.setCreatedAt(Instant.now());
+		order.setCreatedAt(LocalDateTime.now());
 		return order;
 	}
 }

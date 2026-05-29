@@ -1,12 +1,13 @@
 package com.techcobber.smarttrader.v1.models;
 
-import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for the Order model.
@@ -17,7 +18,7 @@ class OrderTest {
     @Test
     void gettersAndSetters_allFields() {
         Order order = new Order();
-        Instant now = Instant.now();
+        LocalDateTime now = LocalDateTime.now();
         Map<String, String> factors = new HashMap<>();
         factors.put("rsi", "oversold");
         factors.put("macd", "bullish_crossover");
@@ -65,7 +66,7 @@ class OrderTest {
 
     @Test
     void equals_sameFieldValues_areEqual() {
-        Instant ts = Instant.parse("2025-06-01T12:00:00Z");
+    	LocalDateTime ts = LocalDateTime.parse("2025-06-01T12:00:00Z");
 
         Order order1 = new Order();
         order1.setId("id-1");

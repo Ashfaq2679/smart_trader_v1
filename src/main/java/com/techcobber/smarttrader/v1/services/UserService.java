@@ -1,6 +1,6 @@
 package com.techcobber.smarttrader.v1.services;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import org.springframework.stereotype.Service;
@@ -39,7 +39,7 @@ public class UserService {
 		if (userRepository.existsById(user.getUserId())) {
 			throw new IllegalArgumentException("User already exists: " + user.getUserId());
 		}
-		Instant now = Instant.now();
+		LocalDateTime now = LocalDateTime.now();
 		user.setCreatedAt(now);
 		user.setUpdatedAt(now);
 		User saved = userRepository.save(user);
@@ -55,6 +55,10 @@ public class UserService {
 	 */
 	public Optional<User> getUser(String userId) {
 		return userRepository.findById(userId);
+	}
+	
+	public User findByUserName(String userName) {
+		return userRepository.findByUserName(userName);
 	}
 
 	/**
@@ -72,11 +76,11 @@ public class UserService {
 		if (updates.getEmail() != null) {
 			existing.setEmail(updates.getEmail());
 		}
-		if (updates.getDisplayName() != null) {
-			existing.setDisplayName(updates.getDisplayName());
+		if (updates.getUserName() != null) {
+			existing.setUserName(updates.getUserName());
 		}
 		existing.setEnabled(updates.isEnabled());
-		existing.setUpdatedAt(Instant.now());
+		existing.setUpdatedAt(LocalDateTime.now());
 
 		User saved = userRepository.save(existing);
 		log.info("Updated user [{}]", userId);
@@ -105,5 +109,21 @@ public class UserService {
 	 */
 	public boolean userExists(String userId) {
 		return userRepository.existsById(userId);
+	}
+
+	/**
+	 * Updates only the currentFunds for a user and persists the change.
+	 *
+	 * @param userId the user to update
+	 * @param newFunds the new current funds value
+	 * @return the updated user
+	 */
+	public User updateUserFunds(String userId, double newFunds) {
+		User existing = userRepository.findByUserName(userId);
+		existing.setCurrentFunds(newFunds);
+		existing.setUpdatedAt(LocalDateTime.now());
+		User saved = userRepository.save(existing);
+		log.info("Updated funds for user [{}]: {}", userId, newFunds);
+		return saved;
 	}
 }

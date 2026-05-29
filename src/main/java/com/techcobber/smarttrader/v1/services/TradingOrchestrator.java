@@ -23,6 +23,13 @@ public class TradingOrchestrator {
 	private static final double MIN_CONFIDENCE = 0.6;
 
 	public TradeDecision executeAnalysis(List<MyCandle> candles, String productId) {
+		if (candles == null || candles.isEmpty()) 
+			return TradeDecision.builder()
+					.productId(productId)
+					.signal(Signal.HOLD)
+					.confidence(0.0)
+					.reasoning("No candle data available for analysis")
+					.build();
 		log.info("========================================");
 		log.info("Starting trading analysis for product: {}", productId);
 		log.info("Candle count: {}", candles == null ? 0 : candles.size());
@@ -33,6 +40,7 @@ public class TradingOrchestrator {
 
 		TradeDecision decision = strategy.analyze(candles, productId);
 		decision.setProductId(productId);
+		decision.setSuggestedPrice(candles.get(candles.size() - 1).getClose());
 
 		log.info("========================================");
 		log.info("Analysis complete for {}", productId);

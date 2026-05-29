@@ -1,6 +1,6 @@
 package com.techcobber.smarttrader.v1.models;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.Map;
 
 import org.springframework.data.annotation.Id;
@@ -71,6 +71,6 @@ public class Order {
 	/** Optional human-readable comment or note. */
 	private String comments;
 
-	private Instant createdAt;
-	private Instant updatedAt;
+	private LocalDateTime createdAt;
+	private LocalDateTime updatedAt;
 }
