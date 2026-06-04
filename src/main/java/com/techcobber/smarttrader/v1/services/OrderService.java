@@ -22,13 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
-
-import org.springframework.cache.annotation.Cacheable;
-import org.springframework.data.redis.core.HashOperations;
-import org.springframework.data.redis.core.ListOperations;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
+	
 import org.springframework.stereotype.Service;
 
 import com.coinbase.advanced.client.CoinbaseAdvancedClient;
@@ -51,7 +45,6 @@ import com.techcobber.smarttrader.v1.models.MyCandle;
 import com.techcobber.smarttrader.v1.models.Order;
 import com.techcobber.smarttrader.v1.models.OrderRequest;
 import com.techcobber.smarttrader.v1.models.OrderResponse;
-import com.techcobber.smarttrader.v1.models.User;
 import com.techcobber.smarttrader.v1.repositories.OrderRepository;
 
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
@@ -71,7 +64,6 @@ public class OrderService {
 	private final ClientService clientService;
 	private final OrderRepository orderRepository;
 	private final UserService userService;
-	private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
 
 	/**
@@ -92,6 +84,7 @@ public class OrderService {
 					STATUS_FAILED, e.getMessage(), MSG_ORDER_FAILED);
 		}
 
+		//TODO: Client and orderService can be optimized by reusing instances per user instead of creating new ones for each request, but for simplicity we create new ones here. Also, we can consider moving client creation to a separate service that manages client instances and their lifecycle.
 		CoinbaseAdvancedClient client = clientService.getClientForUser(userId);
 		OrdersService ordersService = CoinbaseAdvancedServiceFactory.createOrdersService(client);
 
@@ -128,26 +121,26 @@ public class OrderService {
 					.build();
 		}
 
-		// enforce per-order USD cap (20 USD)
-		enforcePerOrderLimit(order, 20.0);
+		// TODO: FIXME: enforce per-order USD cap (30 USD), changing order doesn't work, need to adjust OrderConfiguration instead
+		// but for now just validate and reject if over limit to prevent failed orders on Coinbase side
+		enforcePerOrderLimit(order, 30.0);
 
 		try {
+			log.info("Placing order for user [{}]: productId={}, side={}, orderType={}, REQUEST={}",
+					userId, request.getProductId(), request.getSide(), request.getOrderType(),
+					request);
 			CreateOrderResponse response = ordersService.createOrder(createRequest);
 
 			if (response.isSuccess()) {
 				order.setCoinbaseOrderId(response.getOrderId());
 				order.setStatus(STATUS_PLACED);
 				orderRepository.save(order);
-				// update Redis cache to reflect new pending order quantities and recent orders
-				updateQuantityCacheAfterSave(order);
                 // update user's funds in cache and persist
                 try {
                     if (SIDE_BUY.equalsIgnoreCase(order.getSide())) {
                         double delta = -order.getLimitPrice() * order.getQty();
-                        updateUserFundsCacheAndPersist(order.getUserId(), delta);
                     } else if (SIDE_SELL.equalsIgnoreCase(order.getSide())) {
                         double delta = order.getLimitPrice() * order.getQty();
-                        updateUserFundsCacheAndPersist(order.getUserId(), delta);
                     }
                 } catch (Exception ex) {
                     log.warn("Failed to update user funds after placing order: {}", ex.getMessage());
@@ -161,7 +154,7 @@ public class OrderService {
 				order.setStatus(STATUS_FAILED);
 				order.setFailureReason(response.getFailureReason());
 				orderRepository.save(order);
-				log.warn("Order placement failed for user [{}]: {}", userId, response.getFailureReason());
+				log.warn("Order placement failed for user [{}]: {}", userId, response.getErrorResponse().getMessage());
 
 				return buildOrderResponse(false, order.getId(), null,
 						request.getProductId(), request.getSide(), request.getOrderType(),
@@ -235,8 +228,6 @@ public class OrderService {
 					order.setStatus(STATUS_CANCELLED);
 					order.setUpdatedAt(LocalDateTime.now());
 					orderRepository.save(order);
-					// reflect cancellation in Redis cache (decrement reserved quantity)
-					decrementQuantityCacheAfterCancel(order);
 					log.info("Order cancelled for user [{}]: orderId={}", userId, orderId);
 
 					return buildOrderResponse(true, orderId, order.getCoinbaseOrderId(),
@@ -417,7 +408,7 @@ public class OrderService {
 	private boolean validateOrder(Order order) {
 		// Use Redis cache to determine total available quantity instead of DB call
 		Map<String, Double> qtys = getQtyBySideFromCache(order.getProductId());
-		Double availableFunds = getUserFromCache(order.getUserId()).getCurrentFunds();
+		Double availableFunds = userService.findByUserName(order.getUserId()).getCurrentFunds();
 		double totalAvailableQty = qtys.getOrDefault(SIDE_BUY, 0.0) - qtys.getOrDefault(SIDE_SELL, 0.0);
 		if(availableFunds != null && availableFunds <= 0) {
 			throw new IllegalArgumentException(
@@ -440,30 +431,6 @@ public class OrderService {
 	}
 
 	private boolean isDuplicateOrder(String productId, String side, double price, double qty) {
-		String listKey = "product:recentOrders:" + productId + ":" + side.toUpperCase();
-		ListOperations<String, String> listOps = redisTemplate.opsForList();
-		List<String> entries = listOps.range(listKey, 0, 50); // recent entries
-		if (entries != null && !entries.isEmpty()) {
-			for (String e : entries) {
-				// entry format => price|qty|epochMillis
-				try {
-					String[] parts = e.split("\\|");
-					double p = Double.parseDouble(parts[0]);
-					double q = Double.parseDouble(parts[1]);
-					long epoch = Long.parseLong(parts[2]);
-					LocalDateTime ts = LocalDateTime.ofEpochSecond(epoch / 1000, 0, java.time.ZoneOffset.UTC);
-					if (p == price && q == qty) {
-						// treat within 1 minute as duplicate
-						if (ts.plusMinutes(1).isAfter(LocalDateTime.now())) {
-							return true;
-						}
-					}
-				} catch (Exception ex) {
-					// ignore parse errors and continue
-				}
-			}
-		}
-		// Fallback to DB if cache not present
 		List<Order> orders = orderRepository.findByProductIdAndSide(productId, side);
 		log.info("Checking for duplicate orders for product: {}, side: {}, price: {}, qty: {}, found:{}", productId,
 					side, price, qty, orders);
@@ -516,10 +483,18 @@ public class OrderService {
 					.marketMarketIoc(marketBuilder.build())
 					.build();
 		} else {
+			Double limitPrice = request.getLimitPrice();
+			// find 0.5% of limit price and subtract from limit price to set as stop price,
+			// this is to make sure the post only orders won't fail.
+			if (request.getSide().equalsIgnoreCase(SIDE_SELL)) {
+				limitPrice = request.getLimitPrice() + (request.getLimitPrice() * 0.005);
+			} else {
+				limitPrice = request.getLimitPrice() - (request.getLimitPrice() * 0.005);
+			}
 			LimitGtc limitGtc = new LimitGtc.Builder()
 					.baseSize(String.valueOf(request.getBaseSize()))
-					.limitPrice(String.valueOf(request.getLimitPrice()))
-					.postOnly(false)
+					.limitPrice(String.format("%.2f", limitPrice))	//Must be a string with 2 decimal places to avoid Coinbase API validation error.
+					.postOnly(true)
 					.build();
 			return new OrderConfiguration.Builder()
 					.limitLimitGtc(limitGtc)
@@ -527,7 +502,6 @@ public class OrderService {
 		}
 	}
 	
-	@Cacheable(value = "orders")
 	public List<Order> findAllOrders() {
 		log.info("Fetching all orders from DB.");
 		return orderRepository.findAll();
@@ -539,111 +513,13 @@ public class OrderService {
 
 	// ---------------- Redis cache helpers -----------------
 	private Map<String, Double> getQtyBySideFromCache(String productId) {
-        String key = "product:qty:" + productId;
-        HashOperations<String, String, String> hashOps = redisTemplate.opsForHash();
-        Map<String, String> entries = hashOps.entries(key);
         Map<String, Double> result = new HashMap<>();
-        if (entries != null && !entries.isEmpty()) {
-            entries.forEach((k, v) -> {
-                try {
-                    result.put(k, Double.parseDouble(v));
-                } catch (Exception ex) {
-                    result.put(k, 0.0);
-                }
-            });
-            return result;
-        }
-        // Fallback: compute from DB and populate cache
         List<Order> orders = orderRepository.findByProductId(productId);
         double buy = orders.stream().filter(o -> SIDE_BUY.equalsIgnoreCase(o.getSide())).mapToDouble(Order::getQty).sum();
         double sell = orders.stream().filter(o -> SIDE_SELL.equalsIgnoreCase(o.getSide())).mapToDouble(Order::getQty).sum();
-        hashOps.put(key, SIDE_BUY, String.valueOf(buy));
-        hashOps.put(key, SIDE_SELL, String.valueOf(sell));
-        // expire cache after short TTL to allow re-sync
-        redisTemplate.expire(key, 5, TimeUnit.MINUTES);
         result.put(SIDE_BUY, buy);
         result.put(SIDE_SELL, sell);
         return result;
-    }
-
-    private void updateQuantityCacheAfterSave(Order order) {
-        try {
-            String key = "product:qty:" + order.getProductId();
-            HashOperations<String, String, String> hashOps = redisTemplate.opsForHash();
-            // increment using HINCRBYFLOAT via spring's increment
-            hashOps.increment(key, order.getSide(), order.getQty());
-            // push a lightweight recent-order entry for duplicate detection
-            String listKey = "product:recentOrders:" + order.getProductId() + ":" + order.getSide();
-            String entry = order.getLimitPrice() + "|" + order.getQty() + "|" + System.currentTimeMillis();
-            ListOperations<String, String> listOps = redisTemplate.opsForList();
-            listOps.leftPush(listKey, entry);
-            redisTemplate.expire(listKey, 2, TimeUnit.MINUTES);
-            redisTemplate.expire(key, 10, TimeUnit.MINUTES);
-        } catch (Exception ex) {
-            log.warn("Failed to update Redis cache after save: {}", ex.getMessage());
-        }
-    }
-
-    private void decrementQuantityCacheAfterCancel(Order order) {
-        try {
-            String key = "product:qty:" + order.getProductId();
-            HashOperations<String, String, String> hashOps = redisTemplate.opsForHash();
-            hashOps.increment(key, order.getSide(), -order.getQty());
-        } catch (Exception ex) {
-            log.warn("Failed to decrement Redis cache after cancel: {}", ex.getMessage());
-        }
-    }
-
-    // ---------------- User cache helpers -----------------
-    private User getUserFromCache(String userId) {
-        String key = "user:" + userId;
-        ValueOperations<String, String> valueOps = redisTemplate.opsForValue();
-        try {
-            String json = valueOps.get(key);
-            if (json != null && !json.isBlank()) {
-                return objectMapper.readValue(json, User.class);
-            }
-        } catch (Exception ex) {
-            log.warn("Failed to read user from cache: {}", ex.getMessage());
-        }
-        // fallback to DB
-        User u = userService.findByUserName(userId);
-        if (u != null) {
-            try {
-                valueOps.set(key, objectMapper.writeValueAsString(u));
-                redisTemplate.expire(key, 30, TimeUnit.MINUTES);
-            } catch (Exception ex) {
-                log.warn("Failed to populate user cache: {}", ex.getMessage());
-            }
-        }
-        return u;
-    }
-
-    private void updateUserFundsCacheAndPersist(String userId, double delta) {
-        String key = "user:" + userId;
-        ValueOperations<String, String> valueOps = redisTemplate.opsForValue();
-        synchronized ((key + ":funds").intern()) {
-            try {
-                User u = getUserFromCache(userId);
-                if (u == null) {
-                    throw new IllegalArgumentException("User not found: " + userId);
-                }
-                double newFunds = u.getCurrentFunds() + delta;
-                if (newFunds < 0) {
-                    throw new IllegalArgumentException("Insufficient funds for user: " + userId);
-                }
-                u.setCurrentFunds(newFunds);
-                // persist only the funds field
-                userService.updateUserFunds(userId, newFunds);
-                // update cache with full user object
-                valueOps.set(key, objectMapper.writeValueAsString(u));
-                redisTemplate.expire(key, 30, TimeUnit.MINUTES);
-            } catch (IllegalArgumentException iae) {
-                throw iae;
-            } catch (Exception ex) {
-                log.warn("Failed to update user funds in cache: {}", ex.getMessage());
-            }
-        }
     }
 
     /**

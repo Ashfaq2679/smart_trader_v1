@@ -54,8 +54,11 @@ public class MarketScanScheduler {
 
 	@Value("${APP_DEFAULT_USER}")
 	private String defaultUserId;
+	@Value("${candles.ignore.names:BTC-USDC,ETH-USDC}")
+	private List<String> ignoreProductIds;
 	static final int DEFAULT_LIMIT = 10;
 	private static final int CANDLE_COUNT = 100;
+	private static final Double BASE_SIZE = 25.0;
 
 	private final CoinbaseClientFactory coinbaseClientFactory;
 	private final CircuitBreakerRegistry circuitBreakerRegistry;
@@ -139,7 +142,9 @@ public class MarketScanScheduler {
 	@Scheduled(fixedDelayString = "${scanner.candles.interval.ms:3600000}", initialDelayString = "${scanner.candles.initial.delay.ms:120000}")
 	public void scheduledCandleFetch() {
 		log.info("Scheduled candle fetch starting…");
-		List<String> productIds = coinsRepository.findAll().stream().map(coin -> coin.productId()).toList();
+		List<String> productIds = coinsRepository.findAll().stream()
+				.filter(coin -> coin.productId() != null && !ignoreProductIds.contains(coin.productId()))
+				.map(coin -> coin.productId()).toList();
 		try {
 			productIds.forEach(pId -> {
 				List<MyCandle> candles = fetchCandlesForProduct(pId);
@@ -158,7 +163,7 @@ public class MarketScanScheduler {
 									.productId(pId)
 									.side(decision.getSignal().name())
 									.orderType("LIMIT")
-									.baseSize(10.0) // Example fixed size; in real use this would be dynamic
+									.baseSize(BASE_SIZE) // Example fixed size; in real use this would be dynamic
 									.limitPrice(decision.getSuggestedPrice())
 									.comments("Auto-generated order based on market scan")
 									.build();
