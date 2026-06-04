@@ -64,7 +64,7 @@ public class OrderService {
 	private final ClientService clientService;
 	private final OrderRepository orderRepository;
 	private final UserService userService;
-    private final ObjectMapper objectMapper;
+    private Map<CoinbaseAdvancedClient, OrdersService> orderServiceCache = new HashMap<>();
 
 	/**
 	 * Places a BUY or SELL order on Coinbase and persists the result.
@@ -84,9 +84,14 @@ public class OrderService {
 					STATUS_FAILED, e.getMessage(), MSG_ORDER_FAILED);
 		}
 
-		//TODO: Client and orderService can be optimized by reusing instances per user instead of creating new ones for each request, but for simplicity we create new ones here. Also, we can consider moving client creation to a separate service that manages client instances and their lifecycle.
-		CoinbaseAdvancedClient client = clientService.getClientForUser(userId);
-		OrdersService ordersService = CoinbaseAdvancedServiceFactory.createOrdersService(client);
+		CoinbaseAdvancedClient client = clientService.getCoinbaseClientForUserFromCache(userId);
+		// Populate the cache first at service startup.
+		if(orderServiceCache.size() == 0) {
+			orderServiceCache.put(client, CoinbaseAdvancedServiceFactory.createOrdersService(client));
+		} else if (!orderServiceCache.containsKey(client)) {
+			orderServiceCache.put(client, CoinbaseAdvancedServiceFactory.createOrdersService(client));
+		} 
+		OrdersService ordersService = orderServiceCache.get(client);
 
 		String clientOrderId = UUID.randomUUID().toString();
 		OrderConfiguration orderConfig = buildOrderConfiguration(request);

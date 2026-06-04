@@ -59,4 +59,8 @@ public class ClientService {
 	public boolean hasCredentials(String userId) {
 		return coinbaseClientFactory.hasCredentials(userId);
 	}
+	
+	public CoinbaseAdvancedClient getCoinbaseClientForUserFromCache(String userId) {
+		return coinbaseClientFactory.getCoinbaseClientForUserFromCache(userId);
+	}
 }

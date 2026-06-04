@@ -66,7 +66,7 @@ class OrderTest {
 
     @Test
     void equals_sameFieldValues_areEqual() {
-    	LocalDateTime ts = LocalDateTime.parse("2025-06-01T12:00:00Z");
+    	LocalDateTime ts = LocalDateTime.now();
 
         Order order1 = new Order();
         order1.setId("id-1");
