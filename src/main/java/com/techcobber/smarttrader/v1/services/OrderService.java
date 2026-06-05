@@ -61,6 +61,7 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class OrderService {
 
+	private static final double MAX_USD_PER_ORDER = 30.00;
 	private final ClientService clientService;
 	private final OrderRepository orderRepository;
 	private final UserService userService;
@@ -126,10 +127,6 @@ public class OrderService {
 					.build();
 		}
 
-		// TODO: FIXME: enforce per-order USD cap (30 USD), changing order doesn't work, need to adjust OrderConfiguration instead
-		// but for now just validate and reject if over limit to prevent failed orders on Coinbase side
-		enforcePerOrderLimit(order, 30.0);
-
 		try {
 			log.info("Placing order for user [{}]: productId={}, side={}, orderType={}, REQUEST={}",
 					userId, request.getProductId(), request.getSide(), request.getOrderType(),
@@ -137,16 +134,12 @@ public class OrderService {
 			CreateOrderResponse response = ordersService.createOrder(createRequest);
 
 			if (response.isSuccess()) {
-				order.setCoinbaseOrderId(response.getOrderId());
+				order.setCoinbaseOrderId(response.getSuccessResponse().getOrderId());
 				order.setStatus(STATUS_PLACED);
+				order.setCoinbaseOrderId(response.getOrderId());	// Store CoinBase order ID to query order status later on exchange.
 				orderRepository.save(order);
-                // update user's funds in cache and persist
                 try {
-                    if (SIDE_BUY.equalsIgnoreCase(order.getSide())) {
-                        double delta = -order.getLimitPrice() * order.getQty();
-                    } else if (SIDE_SELL.equalsIgnoreCase(order.getSide())) {
-                        double delta = order.getLimitPrice() * order.getQty();
-                    }
+                    updateUserFundsAfterOrder(userId, order);
                 } catch (Exception ex) {
                     log.warn("Failed to update user funds after placing order: {}", ex.getMessage());
                 }
@@ -174,6 +167,15 @@ public class OrderService {
 			return buildOrderResponse(false, order.getId(), null,
 					request.getProductId(), request.getSide(), request.getOrderType(),
 					STATUS_FAILED, e.getMessage(), MSG_COINBASE_ERROR);
+		}
+	}
+
+	private void updateUserFundsAfterOrder(String userId, Order order) {
+		double orderValue = order.getLimitPrice() * order.getQty();
+		if (SIDE_BUY.equalsIgnoreCase(order.getSide())) {
+			userService.updateUserFunds(userId, -orderValue);
+		} else if (SIDE_SELL.equalsIgnoreCase(order.getSide())) {
+			userService.updateUserFunds(userId, orderValue);
 		}
 	}
 
@@ -217,8 +219,14 @@ public class OrderService {
 			throw new IllegalArgumentException("Order has no Coinbase order ID — cannot cancel");
 		}
 
-		CoinbaseAdvancedClient client = clientService.getClientForUser(userId);
-		OrdersService ordersService = CoinbaseAdvancedServiceFactory.createOrdersService(client);
+		CoinbaseAdvancedClient client = clientService.getCoinbaseClientForUserFromCache(userId);
+		// Populate the cache first at service startup.
+		if(orderServiceCache.size() == 0) {
+			orderServiceCache.put(client, CoinbaseAdvancedServiceFactory.createOrdersService(client));
+		} else if (!orderServiceCache.containsKey(client)) {
+			orderServiceCache.put(client, CoinbaseAdvancedServiceFactory.createOrdersService(client));
+		} 
+		OrdersService ordersService = orderServiceCache.get(client);
 
 		try {
 			CancelOrdersRequest cancelRequest = new CancelOrdersRequest.Builder()
@@ -277,8 +285,14 @@ public class OrderService {
 			throw new IllegalArgumentException("Order has no Coinbase order ID — cannot sync");
 		}
 
-		CoinbaseAdvancedClient client = clientService.getClientForUser(userId);
-		OrdersService ordersService = CoinbaseAdvancedServiceFactory.createOrdersService(client);
+		CoinbaseAdvancedClient client = clientService.getCoinbaseClientForUserFromCache(userId);
+		// Populate the cache first at service startup.
+		if(orderServiceCache.size() == 0) {
+			orderServiceCache.put(client, CoinbaseAdvancedServiceFactory.createOrdersService(client));
+		} else if (!orderServiceCache.containsKey(client)) {
+			orderServiceCache.put(client, CoinbaseAdvancedServiceFactory.createOrdersService(client));
+		} 
+		OrdersService ordersService = orderServiceCache.get(client);
 
 		try {
 			GetOrderRequest getRequest = new GetOrderRequest.Builder()
@@ -373,26 +387,25 @@ public class OrderService {
 	
 	private Order prepareOrder(String productId, String side, String comments, double price, double qty,
 				String userName, MyCandle lastCandle, MyCandle firstCandle) {
-		Order order = new Order();
-		order.setProductId(productId);
-		order.setLimitPrice(price);
-		order.setUserId(userName);
-		// Use Redis cache to compute available quantities instead of direct DB call
+		// Use cache to compute available quantities instead of direct DB call
 		Map<String, Double> qtys = getQtyBySideFromCache(productId);
 		double buyQty = qtys.getOrDefault(SIDE_BUY, 0.0);
 		double sellQty = qtys.getOrDefault(SIDE_SELL, 0.0);
 		double qtyInHand = buyQty - sellQty;
+		
 		double originalQty = qty;
-		if (qty > qtyInHand && side.equalsIgnoreCase(SIDE_SELL)) {
-			qty = qtyInHand; // Adjust quantity to available quantity for sell
-		}
+		
 		if (userName != null && !userName.isBlank()) {
 			double requiredFunds = price * qty;
 			double currentFunds = userService.findByUserName(userName).getCurrentFunds();
 			double availableFunds = currentFunds - requiredFunds;
-			if (availableFunds < 0 && side.equalsIgnoreCase(SIDE_BUY)) {
+			if (qty > qtyInHand && side.equalsIgnoreCase(SIDE_SELL)) {
+				qty = qtyInHand; // Adjust quantity to available quantity for sell
+			}
+			// We need 20 and have 10, so we can only buy 10 / price worth of quantity
+			if (availableFunds < requiredFunds && side.equalsIgnoreCase(SIDE_BUY)) {
 				qty = Math.floor(currentFunds / price); // Adjust quantity based on available funds
-				log.info("Adjusted order quantity from {} to {} for product: {} due to insufficient funds.",
+				log.warn("Adjusted order quantity from {} to {} for product: {} due to insufficient funds.",
 						originalQty, qty, productId);
 			}
 		} else {
@@ -403,6 +416,11 @@ public class OrderService {
 		if (qty <= 0) {
 			throw new IllegalArgumentException("Order quantity adjusted to zero or negative for product: " + productId);
 		}
+		
+		Order order = new Order();
+		order.setProductId(productId);
+		order.setLimitPrice(price);
+		order.setUserId(userName);
 		order.setQty(qty); // Example quantity, adjust as needed
 		order.setSide(side);
 		order.setComments(comments);
@@ -411,7 +429,8 @@ public class OrderService {
 	}
 	
 	private boolean validateOrder(Order order) {
-		// Use Redis cache to determine total available quantity instead of DB call
+		// Use cache to determine total available quantity instead of DB call
+		// Funds and quantity validation is duplicate.
 		Map<String, Double> qtys = getQtyBySideFromCache(order.getProductId());
 		Double availableFunds = userService.findByUserName(order.getUserId()).getCurrentFunds();
 		double totalAvailableQty = qtys.getOrDefault(SIDE_BUY, 0.0) - qtys.getOrDefault(SIDE_SELL, 0.0);
@@ -455,7 +474,7 @@ public class OrderService {
 	
 	private double decideOrderQty(double price) {
 		if (price <= 0) {
-			log.warn("Price is zero or negative, cannot decide order quantity. Defaulting to qty=1.");
+			log.warn("Price is zero or negative, cannot decide order quantity. Defaulting to qty=0.");
 			return 0; // Default quantity
 		}
 		double qty = Constants.DEFAULT_ORDER_VALUE_IN_USD / price; // Default quantity
@@ -463,7 +482,7 @@ public class OrderService {
 	}
 
 	private boolean validateAvailableQuantityForSell(String productId, double qty) {
-		// Use Redis cache to compute available quantity by side
+		// Use cache to compute available quantity by side
 		Map<String, Double> mapOfProductsBySide = getQtyBySideFromCache(productId);
 
 		Double buyQty = mapOfProductsBySide.getOrDefault(SIDE_BUY, 0.0);
@@ -476,6 +495,7 @@ public class OrderService {
 
 	private OrderConfiguration buildOrderConfiguration(OrderRequest request) {
 		String orderType = request.getOrderType().toUpperCase();
+		Double baseSize = request.getBaseSize();
 
 		if (TYPE_MARKET.equals(orderType)) {
 			MarketIoc.Builder marketBuilder = new MarketIoc.Builder();
@@ -493,18 +513,39 @@ public class OrderService {
 			// this is to make sure the post only orders won't fail.
 			if (request.getSide().equalsIgnoreCase(SIDE_SELL)) {
 				limitPrice = request.getLimitPrice() + (request.getLimitPrice() * 0.005);
+				Double availableQty = findAvailableQtyForProduct(request.getProductId());
+				if (availableQty != null && availableQty > 0 && request.getBaseSize() > availableQty) {
+					log.info("Adjusting sell order quantity from {} to {} for product: {} based on available quantity.",
+							request.getBaseSize(), availableQty, request.getProductId());
+					 baseSize = availableQty;
+				}
 			} else {
 				limitPrice = request.getLimitPrice() - (request.getLimitPrice() * 0.005);
+				// Adjust qty i.e baseSize to MAX_USD_PER_ORDER if order value exceeds max allowed per order.
+				double orderValue = request.getBaseSize() * request.getLimitPrice();
+				if (orderValue > MAX_USD_PER_ORDER) {
+					double adjustedBaseSize = Math.floor(MAX_USD_PER_ORDER / request.getLimitPrice() * 1e8) / 1e8; // avoid floating precision
+					log.info("Adjusting buy order quantity from {} to {} for product: {} to enforce max order value of ${}.",
+							request.getBaseSize(), adjustedBaseSize, request.getProductId(), MAX_USD_PER_ORDER);
+					baseSize = adjustedBaseSize;
+				}
 			}
 			LimitGtc limitGtc = new LimitGtc.Builder()
-					.baseSize(String.valueOf(request.getBaseSize()))
-					.limitPrice(String.format("%.2f", limitPrice))	//Must be a string with 2 decimal places to avoid Coinbase API validation error.
+					.baseSize(String.valueOf(baseSize))
+					.limitPrice(String.format("%.2f", limitPrice))	//Must be a string with 2 decimal places to avoid CoinBase API validation error.
 					.postOnly(true)
 					.build();
 			return new OrderConfiguration.Builder()
 					.limitLimitGtc(limitGtc)
 					.build();
 		}
+	}
+
+	private Double findAvailableQtyForProduct(String productId) {
+		Map<String, Double> result = getQtyBySideFromCache(productId);
+		double buyQty = result.get(SIDE_BUY);
+		double sellQty = result.get(SIDE_SELL);
+		return buyQty - sellQty;
 	}
 	
 	public List<Order> findAllOrders() {
@@ -525,26 +566,5 @@ public class OrderService {
         result.put(SIDE_BUY, buy);
         result.put(SIDE_SELL, sell);
         return result;
-    }
-
-    /**
-     * Ensures a single order's USD value does not exceed maxUsd. Adjusts order qty
-     * downwards if necessary. Throws IllegalArgumentException if qty becomes zero.
-     */
-    private void enforcePerOrderLimit(Order order, double maxUsd) {
-        if (order == null) return;
-        double price = order.getLimitPrice();
-        double qty = order.getQty();
-        if (price <= 0 || qty <= 0) return;
-        double value = price * qty;
-        if (value <= maxUsd) return;
-        // adjust qty downward to fit maxUsd
-        double adjustedQty = Math.floor((maxUsd / price) * 1e8) / 1e8; // avoid floating precision
-        if (adjustedQty <= 0) {
-            throw new IllegalArgumentException("Order value exceeds maximum allowed per order: $" + maxUsd);
-        }
-        log.info("Adjusting order qty from {} to {} to enforce maxUsd={} for product {}", qty, adjustedQty, maxUsd,
-                order.getProductId());
-        order.setQty(adjustedQty);
     }
 }
