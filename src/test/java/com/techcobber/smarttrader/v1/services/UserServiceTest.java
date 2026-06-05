@@ -1,6 +1,12 @@
 package com.techcobber.smarttrader.v1.services;
 
-import java.time.Instant;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import org.junit.jupiter.api.DisplayName;
@@ -14,14 +20,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.techcobber.smarttrader.v1.models.User;
 import com.techcobber.smarttrader.v1.repositories.UserRepository;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
-
 /**
- * Unit tests for {@link UserService}.
- * Uses Mockito — no database required.
+ * Unit tests for {@link UserService}. Uses Mockito — no database required.
  */
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
@@ -36,7 +36,7 @@ class UserServiceTest {
 		User user = new User();
 		user.setUserId(userId);
 		user.setEmail(userId + "@example.com");
-		user.setDisplayName("Test User");
+		user.setUserName("Test User");
 		user.setEnabled(true);
 		return user;
 	}
@@ -70,8 +70,7 @@ class UserServiceTest {
 			User input = new User();
 			input.setUserId("  ");
 
-			assertThatThrownBy(() -> userService.createUser(input))
-					.isInstanceOf(IllegalArgumentException.class)
+			assertThatThrownBy(() -> userService.createUser(input)).isInstanceOf(IllegalArgumentException.class)
 					.hasMessageContaining("must not be blank");
 		}
 
@@ -80,8 +79,7 @@ class UserServiceTest {
 		void throwsWhenUserIdNull() {
 			User input = new User();
 
-			assertThatThrownBy(() -> userService.createUser(input))
-					.isInstanceOf(IllegalArgumentException.class)
+			assertThatThrownBy(() -> userService.createUser(input)).isInstanceOf(IllegalArgumentException.class)
 					.hasMessageContaining("must not be blank");
 		}
 
@@ -91,8 +89,7 @@ class UserServiceTest {
 			User input = sampleUser("user-1");
 			when(userRepository.existsById("user-1")).thenReturn(true);
 
-			assertThatThrownBy(() -> userService.createUser(input))
-					.isInstanceOf(IllegalArgumentException.class)
+			assertThatThrownBy(() -> userService.createUser(input)).isInstanceOf(IllegalArgumentException.class)
 					.hasMessageContaining("already exists");
 		}
 	}
@@ -140,19 +137,19 @@ class UserServiceTest {
 		@DisplayName("Updates mutable fields")
 		void updatesMutableFields() {
 			User existing = sampleUser("user-1");
-			existing.setCreatedAt(Instant.now().minusSeconds(3600));
+			existing.setCreatedAt(LocalDateTime.now().minusSeconds(3600));
 			when(userRepository.findById("user-1")).thenReturn(Optional.of(existing));
 			when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
 			User updates = new User();
 			updates.setEmail("new@example.com");
-			updates.setDisplayName("New Name");
+			updates.setUserName("New Name");
 			updates.setEnabled(false);
 
 			User result = userService.updateUser("user-1", updates);
 
 			assertThat(result.getEmail()).isEqualTo("new@example.com");
-			assertThat(result.getDisplayName()).isEqualTo("New Name");
+			assertThat(result.getUserName()).isEqualTo("New Name");
 			assertThat(result.isEnabled()).isFalse();
 			assertThat(result.getUpdatedAt()).isAfter(result.getCreatedAt());
 		}
@@ -162,7 +159,7 @@ class UserServiceTest {
 		void preservesFieldsWhenNull() {
 			User existing = sampleUser("user-1");
 			existing.setEmail("original@example.com");
-			existing.setDisplayName("Original Name");
+			existing.setUserName("Original Name");
 			when(userRepository.findById("user-1")).thenReturn(Optional.of(existing));
 			when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
@@ -172,7 +169,7 @@ class UserServiceTest {
 			User result = userService.updateUser("user-1", updates);
 
 			assertThat(result.getEmail()).isEqualTo("original@example.com");
-			assertThat(result.getDisplayName()).isEqualTo("Original Name");
+			assertThat(result.getUserName()).isEqualTo("Original Name");
 		}
 
 		@Test
@@ -181,8 +178,7 @@ class UserServiceTest {
 			when(userRepository.findById("unknown")).thenReturn(Optional.empty());
 
 			assertThatThrownBy(() -> userService.updateUser("unknown", new User()))
-					.isInstanceOf(IllegalArgumentException.class)
-					.hasMessageContaining("not found");
+					.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("not found");
 		}
 	}
 
@@ -209,8 +205,7 @@ class UserServiceTest {
 		void throwsWhenNotFound() {
 			when(userRepository.existsById("unknown")).thenReturn(false);
 
-			assertThatThrownBy(() -> userService.deleteUser("unknown"))
-					.isInstanceOf(IllegalArgumentException.class)
+			assertThatThrownBy(() -> userService.deleteUser("unknown")).isInstanceOf(IllegalArgumentException.class)
 					.hasMessageContaining("not found");
 		}
 	}

@@ -1,6 +1,6 @@
 package com.techcobber.smarttrader.v1.models;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
 
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
@@ -26,11 +26,13 @@ public class User {
 	@Email(message = "email must be a valid email address")
 	private String email;
 
-	private String displayName;
+	private String userName;
 
 	private boolean enabled;
 
-	private Instant createdAt;
+	private LocalDateTime createdAt;
 
-	private Instant updatedAt;
+	private LocalDateTime updatedAt;
+	
+	private double currentFunds;
 }

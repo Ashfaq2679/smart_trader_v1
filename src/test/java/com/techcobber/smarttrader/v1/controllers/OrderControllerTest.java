@@ -3,9 +3,8 @@ package com.techcobber.smarttrader.v1.controllers;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.when;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -93,7 +92,12 @@ class OrderControllerTest {
 		@Test
 		@DisplayName("Returns 400 on validation error")
 		void returnsBadRequestOnValidationError() {
-			OrderRequest request = new OrderRequest();
+			OrderRequest request = OrderRequest.builder()
+					// Missing productId
+					.side("BUY")
+					.orderType("MARKET")
+					.baseSize(0.5)
+					.build();
 			when(orderService.placeOrder(eq("user-1"), any()))
 					.thenThrow(new IllegalArgumentException("productId is required"));
 
@@ -316,11 +320,12 @@ class OrderControllerTest {
 	// =======================================================================
 
 	private OrderRequest buildMarketBuyRequest() {
-		OrderRequest req = new OrderRequest();
-		req.setProductId("BTC-USDC");
-		req.setSide("BUY");
-		req.setOrderType("MARKET");
-		req.setBaseSize(0.5);
+		OrderRequest req = OrderRequest.builder()
+				.productId("BTC-USDC")
+				.side("BUY")
+				.orderType("MARKET")
+				.baseSize(0.5)
+				.build();
 		return req;
 	}
 }

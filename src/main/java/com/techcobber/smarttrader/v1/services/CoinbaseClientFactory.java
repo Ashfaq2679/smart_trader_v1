@@ -45,6 +45,28 @@ public class CoinbaseClientFactory {
 				.expireAfterWrite(30, TimeUnit.MINUTES)
 				.maximumSize(500)
 				.build();
+		populateCacheOnStartup();
+	}
+
+	private void populateCacheOnStartup() {
+		credentialsRepository.findAll().forEach(cred -> {
+			String userId = cred.getUserId();
+			try {
+				CoinbaseAdvancedClient client = buildClient(userId);
+				clientCache.put(userId, client);
+				log.info("Preloaded Coinbase client for user [{}]", userId);
+			} catch (Throwable t) {
+				log.error("Failed to preload Coinbase client for user [{}]: {}", userId, t.getMessage());
+			}
+		});
+		log.info("Coinbase client cache initialized with {} entries", clientCache);
+	}
+	
+	public CoinbaseAdvancedClient getCoinbaseClientForUserFromCache(String userId) {
+		if (userId == null || userId.isBlank()) {
+			throw new IllegalArgumentException("userId must not be null or blank");
+		}
+		return clientCache.getIfPresent(userId);
 	}
 
 	/**

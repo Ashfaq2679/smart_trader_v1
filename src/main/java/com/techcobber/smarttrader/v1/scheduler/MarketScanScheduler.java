@@ -4,7 +4,6 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -15,11 +14,14 @@ import com.coinbase.advanced.model.common.Granularity;
 import com.techcobber.smarttrader.v1.models.CoinScanResult;
 import com.techcobber.smarttrader.v1.models.ListCandles;
 import com.techcobber.smarttrader.v1.models.MyCandle;
+import com.techcobber.smarttrader.v1.models.OrderRequest;
+import com.techcobber.smarttrader.v1.models.OrderResponse;
 import com.techcobber.smarttrader.v1.models.TradeDecision;
 import com.techcobber.smarttrader.v1.repositories.CoinsRepository;
 import com.techcobber.smarttrader.v1.services.CoinbaseClientFactory;
 import com.techcobber.smarttrader.v1.services.CoinbasePublicServiceImpl;
 import com.techcobber.smarttrader.v1.services.MarketScannerService;
+import com.techcobber.smarttrader.v1.services.OrderService;
 import com.techcobber.smarttrader.v1.services.TradeDecisionService;
 import com.techcobber.smarttrader.v1.services.TradingOrchestrator;
 import com.techcobber.smarttrader.v1.strategy.PatternUtils;
@@ -52,8 +54,11 @@ public class MarketScanScheduler {
 
 	@Value("${APP_DEFAULT_USER}")
 	private String defaultUserId;
+	@Value("${candles.ignore.names:BTC-USDC,ETH-USDC}")
+	private List<String> ignoreProductIds;
 	static final int DEFAULT_LIMIT = 10;
 	private static final int CANDLE_COUNT = 100;
+	private static final Double BASE_SIZE = 25.0;
 
 	private final CoinbaseClientFactory coinbaseClientFactory;
 	private final CircuitBreakerRegistry circuitBreakerRegistry;
@@ -62,6 +67,7 @@ public class MarketScanScheduler {
 	private final TradingOrchestrator tradingOrchestrator;
 	private final CoinsRepository coinsRepository;
 	private final TradeDecisionService tradeDecisionService; // optional, may be null
+	private final OrderService orderService;
 
 	/**
 	 * Scheduled task — runs every hour (3 600 000 ms). The initial delay allows the
@@ -136,14 +142,16 @@ public class MarketScanScheduler {
 	@Scheduled(fixedDelayString = "${scanner.candles.interval.ms:3600000}", initialDelayString = "${scanner.candles.initial.delay.ms:120000}")
 	public void scheduledCandleFetch() {
 		log.info("Scheduled candle fetch starting…");
-		List<String> productIds = coinsRepository.findAll().stream().map(coin -> coin.productId()).toList();
+		List<String> productIds = coinsRepository.findAll().stream()
+				.filter(coin -> coin.productId() != null && !ignoreProductIds.contains(coin.productId()))
+				.map(coin -> coin.productId()).toList();
 		try {
 			productIds.forEach(pId -> {
 				List<MyCandle> candles = fetchCandlesForProduct(pId);
 				TradeDecision decision = tradingOrchestrator.executeAnalysis(candles, pId);
 				log.info("Scheduled candle fetch completed for {}. Trade decision: {}", pId, decision);
 				// Persist decision when confidence > 0.70 and a strong pattern exists
-				if (tradeDecisionService != null) {
+				if (decision != null) {
 					boolean hasStrongPattern = false;
 					if (decision.getDetectedPatterns() != null) {
 						hasStrongPattern = PatternUtils.hasStrongPatternByNames(decision.getDetectedPatterns());
@@ -151,7 +159,16 @@ public class MarketScanScheduler {
 					if (decision.getConfidence() > 0.70 && hasStrongPattern) {
 						try {
 							tradeDecisionService.save(decision);
-							log.info("Persisted TradeDecision for {} (confidence: {})", pId, decision.getConfidence());
+							OrderRequest request = OrderRequest.builder()
+									.productId(pId)
+									.side(decision.getSignal().name())
+									.orderType("LIMIT")
+									.baseSize(BASE_SIZE) // Example fixed size; in real use this would be dynamic
+									.limitPrice(decision.getSuggestedPrice())
+									.comments("Auto-generated order based on market scan")
+									.build();
+							OrderResponse response = orderService.placeOrder(defaultUserId, request);
+							log.info("Persisted TradeDecision for {} (confidence: {}) for ", pId, decision.getConfidence(), response.getProductId());
 						} catch (Exception e) {
 							log.warn("Failed to persist TradeDecision for {}: {}", pId, e.getMessage());
 						}

@@ -35,6 +35,7 @@ public class TradeDecision {
 	private String trendDirection;
 	private Double nearestSupport;
 	private Double nearestResistance;
+	private Double suggestedPrice;
 	private String productId;
 
 	@CreatedDate

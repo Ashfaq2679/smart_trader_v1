@@ -1,6 +1,13 @@
 package com.techcobber.smarttrader.v1.controllers;
 
-import java.time.Instant;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
 
@@ -16,11 +23,6 @@ import org.springframework.http.ResponseEntity;
 
 import com.techcobber.smarttrader.v1.models.User;
 import com.techcobber.smarttrader.v1.services.UserService;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for {@link UserController}.
@@ -39,10 +41,10 @@ class UserControllerTest {
 		User user = new User();
 		user.setUserId(userId);
 		user.setEmail(userId + "@example.com");
-		user.setDisplayName("Test User");
+		user.setUserName("Test User");
 		user.setEnabled(true);
-		user.setCreatedAt(Instant.now());
-		user.setUpdatedAt(Instant.now());
+		user.setCreatedAt(LocalDateTime.now());
+		user.setUpdatedAt(LocalDateTime.now());
 		return user;
 	}
 

@@ -21,6 +21,7 @@ public final class OrderConstants {
 
 	// -- Order statuses --
 	public static final String STATUS_PENDING = "PENDING";
+	public static final String STATUS_PLACED = "PLACED";
 	public static final String STATUS_FAILED = "FAILED";
 	public static final String STATUS_CANCELLED = "CANCELLED";
 

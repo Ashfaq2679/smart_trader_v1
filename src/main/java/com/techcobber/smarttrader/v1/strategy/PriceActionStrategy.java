@@ -1,6 +1,5 @@
 package com.techcobber.smarttrader.v1.strategy;
 
-import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -66,10 +65,10 @@ public class PriceActionStrategy implements TradingStrategy {
 				.filter(l -> l.getType() == LevelType.RESISTANCE)
 				.toList();
 
-		log.info("Support levels: {}", supports.stream()
+		log.debug("Support levels: {}", supports.stream()
 				.map(l -> String.format("%.2f (strength:%d)", l.getPrice(), l.getStrength()))
 				.toList());
-		log.info("Resistance levels: {}", resistances.stream()
+		log.debug("Resistance levels: {}", resistances.stream()
 				.map(l -> String.format("%.2f (strength:%d)", l.getPrice(), l.getStrength()))
 				.toList());
 
@@ -101,7 +100,7 @@ public class PriceActionStrategy implements TradingStrategy {
 		List<String> patternNames = detectedPatterns.stream()
 				.map(DetectedPattern::getName)
 				.toList();
-		log.info("Detected candle patterns: {}", patternNames);
+		log.debug("Detected candle patterns: {}", patternNames);
 
 		long bullishPatterns = detectedPatterns.stream()
 				.filter(p -> p.getBias() == PatternBias.BULLISH)

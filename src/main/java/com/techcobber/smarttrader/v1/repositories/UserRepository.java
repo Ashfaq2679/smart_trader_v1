@@ -14,4 +14,5 @@ import com.techcobber.smarttrader.v1.models.User;
  */
 @Repository
 public interface UserRepository extends MongoRepository<User, String> {
+	User findByUserName(String userName);
 }
