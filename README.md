@@ -5,6 +5,24 @@ the Coinbase Advanced Trade API. It analyses price-action candles, detects chart
 patterns, evaluates trend direction, and generates BUY / SELL / HOLD signals with
 confidence scores and risk-managed position sizing.
 
+## Java API source-code Reference##
+```html
+https://github.com/coinbase-samples/advanced-sdk-java
+```
+The ``apikeyname`` and ``privatekey`` for the Java SDK are generated via the Coinbase Developer Platform (CDP) portal using ECDSA cryptographic keys. Users must create a API key pair in the portal, securely saving the one-time viewable private key and the specific key name format for use in the Credentials object. For full setup instructions, visit 
+``https://docs.cdp.coinbase.com/coinbase-business/authentication-authorization/api-key-authentication``
+
+
+###Creating API Keys###
+- Navigate to the Coinbase Developer Platform and select Secret API Keys under the API Keys tab.
+- Click the Create API key button.
+- Enter an API key nickname and then expand API restrictions and Advanced Settings.
+- Enter your IPs in the IP allowlist section (recommended but not required).
+- Set portfolio and permission restrictions.
+- Change signature algorithm to ECDSA if you’re not developing your own authentication code.
+- Click Create API key.
+- Secure your private/public key pair in a safe location.
+
 ## Quick Start
 
 ### Prerequisites
