@@ -1,6 +1,7 @@
 package com.techcobber.smarttrader.v1.services;
 
 import com.techcobber.smarttrader.v1.models.MyCandle;
+import com.techcobber.smarttrader.v1.models.Order;
 import com.techcobber.smarttrader.v1.models.TradeDecision;
 import com.techcobber.smarttrader.v1.models.TradeDecision.Signal;
 import com.techcobber.smarttrader.v1.models.UserPreferences;
@@ -47,28 +48,28 @@ class TradingOrchestratorTest {
     }
 
     /**
-     * Creates 25+ candles simulating a strong uptrend ending with bullish patterns.
+     * Creates 28 candles: a gentle uptrend followed by a pullback to near EMA50,
+     * then a bullish bounce — satisfying the location filter for BUY.
      */
     private static List<MyCandle> bullishUptrendCandles() {
         List<MyCandle> candles = new ArrayList<>();
-        double base = 100;
-        for (int i = 0; i < 22; i++) {
-            double drift = i * 1.5;
-            double wave = 3.0 * Math.sin(i * 0.8);
-            double open = base + drift + wave;
-            double close = open + 1.5 + (i % 3 == 0 ? -0.5 : 0.5);
-            double high = Math.max(open, close) + 2;
-            double low = Math.min(open, close) - 2;
+        for (int i = 0; i < 20; i++) {
+            double base  = 100.0 + i * 0.25;
+            double wave  = 0.5 * Math.sin(i * 0.8);
+            double open  = base + wave;
+            double close = open + 0.2 + (i % 3 == 0 ? -0.1 : 0.1);
+            double high  = Math.max(open, close) + 0.4;
+            double low   = Math.min(open, close) - 0.4;
             candles.add(candle(open, close, high, low, i));
         }
-        // End with bullish engulfing pattern
-        double lastClose = candles.get(candles.size() - 1).getClose();
-        candles.add(candle(lastClose + 2, lastClose - 1, lastClose + 3, lastClose - 2, 22L));
-        double prevOpen = lastClose + 2;
-        double prevClose = lastClose - 1;
-        candles.add(candle(prevClose - 1, prevOpen + 2, prevOpen + 4, prevClose - 2, 23L));
-        double nextOpen = prevOpen + 2;
-        candles.add(candle(nextOpen, nextOpen + 8, nextOpen + 8.5, nextOpen - 0.3, 24L));
+        for (int i = 20; i < 25; i++) {
+            double base  = 105.0 - (i - 20) * 0.6;
+            candles.add(candle(base + 0.1, base - 0.1, base + 0.5, base - 0.5, i));
+        }
+        double s = 102.0;
+        candles.add(candle(s + 0.5, s - 0.3, s + 0.8, s - 0.5, 25));
+        candles.add(candle(s - 0.3, s + 1.0, s + 1.2, s - 0.5, 26));
+        candles.add(candle(s + 1.0, s + 2.5, s + 2.6, s + 0.9, 27));
         return candles;
     }
 
@@ -226,6 +227,98 @@ class TradingOrchestratorTest {
 
             TradeDecision decision = (TradeDecision) result.get("decision");
             assertThat(decision.getProductId()).isEqualTo("SOL-USD");
+        }
+    }
+
+    // =======================================================================
+    // evaluateExit Tests
+    // =======================================================================
+
+    @Nested
+    @DisplayName("evaluateExit")
+    class EvaluateExitTests {
+
+        private static final String PRODUCT = "ETH-USDC";
+
+        private Order openBuy(double entryPrice, double stopLoss) {
+            Order order = new Order();
+            order.setProductId(PRODUCT);
+            order.setEntryPriceNum(entryPrice);
+            order.setStopLoss(stopLoss);
+            order.setSide("BUY");
+            return order;
+        }
+
+        /** Builds candles with a fixed price (for predictable EMA/ATR). */
+        private List<MyCandle> flatCandles(int count, double price) {
+            List<MyCandle> candles = new ArrayList<>();
+            for (int i = 0; i < count; i++) {
+                candles.add(candle(price, price, price + 1, price - 1, i));
+            }
+            return candles;
+        }
+
+        @Test
+        @DisplayName("Returns null for null order")
+        void nullOrder() {
+            assertThat(orchestrator.evaluateExit(null, flatCandles(30, 100), null)).isNull();
+        }
+
+        @Test
+        @DisplayName("Returns null for empty candles")
+        void emptyCandles() {
+            Order order = openBuy(100.0, 95.0);
+            assertThat(orchestrator.evaluateExit(order, List.of(), null)).isNull();
+        }
+
+        @Test
+        @DisplayName("Trigger 1: Returns SELL when price <= effectiveStop (stored SL)")
+        void effectiveStopTriggered() {
+            // entryPrice=100, stopLoss=95, price drops to 94 (below SL)
+            Order order = openBuy(100.0, 95.0);
+            List<MyCandle> candles = new ArrayList<>();
+            for (int i = 0; i < 29; i++) candles.add(candle(100, 100, 101, 99, i));
+            candles.add(candle(94, 94, 95, 93, 29)); // final candle at 94 < 95 SL
+
+            TradeDecision result = orchestrator.evaluateExit(order, candles, null);
+
+            assertThat(result).isNotNull();
+            assertThat(result.getSignal()).isEqualTo(Signal.SELL);
+            assertThat(result.getReasoning()).contains("stop");
+        }
+
+        @Test
+        @DisplayName("Trigger 1: effectiveStop uses maxLoss% when it is higher than stored SL")
+        void effectiveStopUsesMaxLossPct() {
+            // entryPrice=100, stopLoss=50 (far away), maxDailyLoss=3%
+            // effectiveStop = max(50, 100*0.97) = 97
+            Order order = openBuy(100.0, 50.0);
+            UserPreferences prefs = new UserPreferences();
+            prefs.setMaxDailyLoss("3.0");
+            prefs.setTrailingAtrMultiplier("100.0"); // disable trailing stop
+
+            List<MyCandle> candles = new ArrayList<>();
+            for (int i = 0; i < 29; i++) candles.add(candle(100, 100, 101, 99, i));
+            candles.add(candle(96, 96, 97, 95, 29)); // price at 96 < effectiveStop(97)
+
+            TradeDecision result = orchestrator.evaluateExit(order, candles, prefs);
+
+            assertThat(result).isNotNull();
+            assertThat(result.getSignal()).isEqualTo(Signal.SELL);
+        }
+
+        @Test
+        @DisplayName("Returns null when price is well above all stops")
+        void noExitWhenPriceAboveAllStops() {
+            // entryPrice=100, stopLoss=90, price=120 — safely above everything
+            Order order = openBuy(100.0, 90.0);
+            // Rising candles so EMA9 > EMA21 (no momentum exit)
+            List<MyCandle> candles = new ArrayList<>();
+            for (int i = 0; i < 30; i++) candles.add(candle(100 + i, 100 + i, 102 + i, 99 + i, i));
+
+            TradeDecision result = orchestrator.evaluateExit(order, candles, null);
+
+            assertThat(result).isNull();
         }
     }
 }

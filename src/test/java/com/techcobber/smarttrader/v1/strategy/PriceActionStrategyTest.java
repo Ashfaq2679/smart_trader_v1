@@ -37,35 +37,36 @@ class PriceActionStrategyTest {
     }
 
     /**
-     * Creates 25+ candles simulating a strong uptrend with higher highs/lows,
-     * ending with bullish patterns to trigger a BUY signal.
+     * Creates 30 candles simulating an uptrend that ENDS with a pullback to near EMA50.
+     * This satisfies the new location filter (price within 3% of EMA50) while still
+     * maintaining bullish swing structure and a bounce at support with bullish patterns.
      */
     private static List<MyCandle> bullishUptrendCandles() {
         List<MyCandle> candles = new ArrayList<>();
-        double base = 100;
-        // Build a wave-like uptrend with clear swing structure
-        for (int i = 0; i < 22; i++) {
-            double drift = i * 1.5;
-            // Oscillate to create swing highs and lows
-            double wave = 3.0 * Math.sin(i * 0.8);
-            double open = base + drift + wave;
-            double close = open + 1.5 + (i % 3 == 0 ? -0.5 : 0.5);
-            double high = Math.max(open, close) + 2;
-            double low = Math.min(open, close) - 2;
+        // Phase 1: gentle uptrend — price 100→105 over 20 candles (EMA50 tracks closely)
+        for (int i = 0; i < 20; i++) {
+            double base  = 100.0 + i * 0.25; // +0.25 per candle = +5 over 20
+            double wave  = 0.5 * Math.sin(i * 0.8);
+            double open  = base + wave;
+            double close = open + 0.2 + (i % 3 == 0 ? -0.1 : 0.1);
+            double high  = Math.max(open, close) + 0.4;
+            double low   = Math.min(open, close) - 0.4;
             candles.add(candle(open, close, high, low, i));
         }
-        // End with two strong bullish candles (bullish engulfing pattern)
-        double lastClose = candles.get(candles.size() - 1).getClose();
-        // Bearish candle
-        candles.add(candle(lastClose + 2, lastClose - 1, lastClose + 3, lastClose - 2, 22L));
-        // Bullish engulfing candle (open <= prev.close, close >= prev.open)
-        double prevOpen = lastClose + 2;
-        double prevClose = lastClose - 1;
-        candles.add(candle(prevClose - 1, prevOpen + 2, prevOpen + 4, prevClose - 2, 23L));
-        // One more strong bullish candle
-        double nextOpen = prevOpen + 2;
-        candles.add(candle(nextOpen, nextOpen + 8, nextOpen + 8.5, nextOpen - 0.3, 24L));
-
+        // Phase 2: pullback to near EMA50 — price drops back to ~102 (near support)
+        for (int i = 20; i < 25; i++) {
+            double base  = 105.0 - (i - 20) * 0.6; // steps back from 105 toward 102
+            double open  = base + 0.1;
+            double close = base - 0.1;
+            double high  = base + 0.5;
+            double low   = base - 0.5;
+            candles.add(candle(open, close, high, low, i));
+        }
+        // Phase 3: bullish bounce at pullback support — bearish then bullish engulfing
+        double supportPrice = 102.0;
+        candles.add(candle(supportPrice + 0.5, supportPrice - 0.3, supportPrice + 0.8, supportPrice - 0.5, 25));
+        candles.add(candle(supportPrice - 0.3, supportPrice + 1.0, supportPrice + 1.2, supportPrice - 0.5, 26));
+        candles.add(candle(supportPrice + 1.0, supportPrice + 2.5, supportPrice + 2.6, supportPrice + 0.9, 27));
         return candles;
     }
 

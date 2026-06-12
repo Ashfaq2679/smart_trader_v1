@@ -38,6 +38,27 @@ public class TradeDecision {
 	private Double suggestedPrice;
 	private String productId;
 
+	/** EMA50 value at the time of analysis. */
+	private Double ema50;
+
+	/** ATR(14) value at the time of analysis. */
+	private Double atr;
+
+	/** Distance from EMA50 as a percentage: (price - EMA50) / EMA50 × 100. */
+	private Double distanceFromEma50Pct;
+
+	/** 1D (daily) trend direction determined by MultiTimeframeAnalyzer. */
+	private String htfTrendDirection;
+
+	/** 4H (confirmation) trend direction determined by MultiTimeframeAnalyzer. */
+	private String confirmTrendDirection;
+
+	/** Whether consolidation was detected and blocked entry. */
+	private Boolean consolidationDetected;
+
+	/** Composite entry score (confidence) at the time of signal generation. */
+	private Double entryScore;
+
 	@CreatedDate
 	private LocalDateTime timestamp;
 
