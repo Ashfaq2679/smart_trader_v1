@@ -606,3 +606,30 @@ Map<String, Map<String, String>> indicatorParams;  // e.g., {"RSI": {"period": "
 - [ ] Paper trading mode (simulated execution)
 - [ ] Multi-exchange support (beyond Coinbase)
 - [ ] Machine learning signal enhancement
+
+---
+
+## Recent Updates
+
+### Order Quantity Adjustment
+- The application now adjusts the `SELL` order quantity dynamically based on the available quantity in MongoDB.
+- This ensures that orders do not fail due to insufficient quantities on the exchange.
+- The `OrderService` and `OrderRepository` are used to fetch and validate available quantities before placing orders.
+
+### Order Status Synchronization
+- A new method has been added to fetch the status of an order from the exchange and update the `OrderRepository` accordingly.
+- This ensures that the local database reflects the latest status of orders on the exchange.
+
+### Strategy Design Pattern
+- The `Strategy Design Pattern` has been implemented to handle the preparation of orders based on the exchange response.
+- This removes conditional logic and improves code maintainability.
+
+---
+
+## Security
+
+### OAuth 2.0 Resource Server (JWT)
+- The application uses `spring.security.oauth2.*` properties to configure OAuth 2.0 authentication.
+- These properties are unrelated to Coinbase API authentication but are used for securing the application endpoints.
+
+---

@@ -23,6 +23,17 @@ The ``apikeyname`` and ``privatekey`` for the Java SDK are generated via the Coi
 - Click Create API key.
 - Secure your private/public key pair in a safe location.
 
+###Configuring portfolios###
+You can create a separate portfolio for algo trading.
+Once you create a portfolio you need to configure it in ``smart_trader_v1`` application in order to keep these trades separate.
+- To configure a portfolio with the ``smart_trader_v1`` application, you need to get the ``UUID`` of the portfolio.
+- To get the ``UUID`` of the portfolio, you need to get the JWT token to call the ``ListPortfolios`` API 
+- To get the JWT, you need to use on of the ways given on this documentation page `https://docs.cdp.coinbase.com/get-started/authentication/jwt-authentication#code-samples-for-ecdsa-keys`
+- Follow the instructions based on the language of your choice.
+
+####List portfolios####
+``https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/portfolios/list-portfolios``
+
 ## Quick Start
 
 ### Prerequisites

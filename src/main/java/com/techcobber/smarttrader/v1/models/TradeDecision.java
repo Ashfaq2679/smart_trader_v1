@@ -40,4 +40,13 @@ public class TradeDecision {
 
 	@CreatedDate
 	private LocalDateTime timestamp;
+
+	@Override
+	public String toString() {
+		return String.format(
+				"\nTradeDecision{id:'%s',\n signal=%s,\n confidence=%.2f,\n reasoning='%s',\n patterns=%s,\n trend='%s',"
+				+ "\n support=%.2f,\n resistance=%.2f,\n price=%.2f,\n productId='%s',\n timestamp=%s\n}",
+				id, signal, confidence, reasoning, detectedPatterns, trendDirection, nearestSupport, nearestResistance,
+				suggestedPrice, productId, timestamp);
+	}
 }

@@ -47,6 +47,7 @@ public class CoinbasePublicServiceImpl extends PublicServiceImpl {
 	}
 
 	private final String baseUrl = "/brokerage/market/products";
+	private final String ordersUrl = "/brokerage/orders/historical";
 
 	/**
 	 * Fetches public product information for a specific product ID. The method

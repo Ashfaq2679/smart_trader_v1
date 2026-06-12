@@ -278,10 +278,67 @@ public class PriceActionStrategy implements TradingStrategy {
 			}
 		}
 
+		// New: incorporate Risk:Reward into confidence
+		double rr = calculateRiskRewardRatio(signal, currentPrice, nearestSupport, nearestResistance);
+		log.debug("Calculated Risk:Reward (reward/risk) = {}", String.format("%.2f", rr));
+
+		if (rr < 2.0) {
+			// If R:R is less than 1:2, do not allow confidence to exceed 0.7
+			if (confidence > 0.7) {
+				log.debug("Capping confidence to 0.70 because R:R < 1:2");
+				confidence = 0.7;
+			}
+		} else {
+			// Reward good R:R with a small bonus (max +0.10)
+			double bonus = Math.min(0.10, (rr - 2.0) * 0.02);
+			if (bonus > 0) {
+				confidence = Math.min(1.0, confidence + bonus);
+				log.debug("R:R bonus applied: +{}", String.format("%.2f", bonus));
+			}
+		}
+
 		confidence = Math.min(1.0, Math.max(0.0, confidence));
-		log.info("Confidence calculation: {} (trend-aligned: {}, relevant-patterns: {}, strong-pattern: {})",
-				String.format("%.2f", confidence), trendAligned, relevantPatterns, hasStrongPattern);
+		log.info("Confidence calculation: {} (trend-aligned: {}, relevant-patterns: {}, strong-pattern: {}, R:R: {})",
+				String.format("%.2f", confidence), trendAligned, relevantPatterns, hasStrongPattern, String.format("%.2f", rr));
 		return Math.round(confidence * 100.0) / 100.0;
+	}
+
+	// New helper to compute reward/risk ratio. For BUY: reward = resistance - price, risk = price - support.
+	// For SELL: reward = price - support, risk = resistance - price.
+	private double calculateRiskRewardRatio(Signal signal, double currentPrice,
+			Double nearestSupport, Double nearestResistance) {
+		if (signal == Signal.HOLD) {
+			return 1.0;
+		}
+
+		try {
+			if (signal == Signal.BUY) {
+				if (nearestSupport == null || nearestResistance == null) {
+					return 1.0;
+				}
+				double risk = currentPrice - nearestSupport;
+				double reward = nearestResistance - currentPrice;
+				if (risk <= 0 || reward <= 0) {
+					return 1.0;
+				}
+				return reward / risk;
+			}
+
+			if (signal == Signal.SELL) {
+				if (nearestSupport == null || nearestResistance == null) {
+					return 1.0;
+				}
+				double risk = nearestResistance - currentPrice;
+				double reward = currentPrice - nearestSupport;
+				if (risk <= 0 || reward <= 0) {
+					return 1.0;
+				}
+				return reward / risk;
+			}
+		} catch (Exception e) {
+			log.debug("Error calculating R:R: {}", e.getMessage());
+		}
+		return 1.0;
 	}
 
 	private String buildReasoning(Signal signal, TrendResult trend,

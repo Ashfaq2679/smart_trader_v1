@@ -6,13 +6,10 @@ import static com.techcobber.smarttrader.v1.models.OrderConstants.MSG_CANCEL_NO_
 import static com.techcobber.smarttrader.v1.models.OrderConstants.MSG_COINBASE_ERROR;
 import static com.techcobber.smarttrader.v1.models.OrderConstants.MSG_ORDER_CANCELLED;
 import static com.techcobber.smarttrader.v1.models.OrderConstants.MSG_ORDER_FAILED;
-import static com.techcobber.smarttrader.v1.models.OrderConstants.MSG_ORDER_PLACED;
 import static com.techcobber.smarttrader.v1.models.OrderConstants.SIDE_BUY;
 import static com.techcobber.smarttrader.v1.models.OrderConstants.SIDE_SELL;
 import static com.techcobber.smarttrader.v1.models.OrderConstants.STATUS_CANCELLED;
 import static com.techcobber.smarttrader.v1.models.OrderConstants.STATUS_FAILED;
-import static com.techcobber.smarttrader.v1.models.OrderConstants.STATUS_PENDING;
-import static com.techcobber.smarttrader.v1.models.OrderConstants.STATUS_PLACED;
 import static com.techcobber.smarttrader.v1.models.OrderConstants.TYPE_LIMIT;
 import static com.techcobber.smarttrader.v1.models.OrderConstants.TYPE_MARKET;
 
@@ -22,7 +19,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-	
+
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.coinbase.advanced.client.CoinbaseAdvancedClient;
@@ -35,24 +33,21 @@ import com.coinbase.advanced.model.orders.CreateOrderRequest;
 import com.coinbase.advanced.model.orders.CreateOrderResponse;
 import com.coinbase.advanced.model.orders.GetOrderRequest;
 import com.coinbase.advanced.model.orders.GetOrderResponse;
-import com.coinbase.advanced.model.orders.LimitGtc;
-import com.coinbase.advanced.model.orders.MarketIoc;
 import com.coinbase.advanced.model.orders.OrderConfiguration;
 import com.coinbase.advanced.orders.OrdersService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.techcobber.smarttrader.v1.common.Constants;
+import com.techcobber.smarttrader.v1.helpers.OrderHelper;
 import com.techcobber.smarttrader.v1.models.MyCandle;
 import com.techcobber.smarttrader.v1.models.Order;
 import com.techcobber.smarttrader.v1.models.OrderRequest;
 import com.techcobber.smarttrader.v1.models.OrderResponse;
 import com.techcobber.smarttrader.v1.repositories.OrderRepository;
 
-import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Service for placing, retrieving, and cancelling orders via the Coinbase
+ * Service for placing, retrieving, and canceling orders via the CoinBase
  * Advanced Trade API. Every order is persisted in MongoDB for future
  * algorithmic-performance and P&amp;L analysis.
  */
@@ -61,62 +56,47 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class OrderService {
 
-	private static final double MAX_USD_PER_ORDER = 30.00;
 	private final ClientService clientService;
 	private final OrderRepository orderRepository;
 	private final UserService userService;
     private Map<CoinbaseAdvancedClient, OrdersService> orderServiceCache = new HashMap<>();
+    @Value("${SMART_TRADER_V1_PORTFOLIO_ID}")
+    private String portfolioId;
 
 	/**
-	 * Places a BUY or SELL order on Coinbase and persists the result.
+	 * Places a BUY or SELL order on CoinBase and persists the result.
 	 *
 	 * @param userId  the authenticated user
 	 * @param request order parameters
 	 * @return an {@link OrderResponse} describing the outcome
 	 */
-	@CircuitBreaker(name = "orderService")
+	//@CircuitBreaker(name = "orderService")
 	public OrderResponse placeOrder(String userId, OrderRequest request) {
 		try {
 			validateOrderRequest(request);
 		} catch (Exception e) {
 			log.warn("Invalid order request for user [{}]: {}", userId, e.getMessage());
-			return buildOrderResponse(false, null, null,
+			return OrderHelper.buildOrderResponse(false, null, null,
 					request.getProductId(), request.getSide(), request.getOrderType(),
 					STATUS_FAILED, e.getMessage(), MSG_ORDER_FAILED);
 		}
 
-		CoinbaseAdvancedClient client = clientService.getCoinbaseClientForUserFromCache(userId);
-		// Populate the cache first at service startup.
-		if(orderServiceCache.size() == 0) {
-			orderServiceCache.put(client, CoinbaseAdvancedServiceFactory.createOrdersService(client));
-		} else if (!orderServiceCache.containsKey(client)) {
-			orderServiceCache.put(client, CoinbaseAdvancedServiceFactory.createOrdersService(client));
-		} 
-		OrdersService ordersService = orderServiceCache.get(client);
+		OrdersService ordersService = OrderHelper.getOrderServiceFromCache(clientService, userId, orderServiceCache);
 
 		String clientOrderId = UUID.randomUUID().toString();
-		OrderConfiguration orderConfig = buildOrderConfiguration(request);
+		OrderConfiguration orderConfig = OrderHelper.buildOrderConfiguration(request, orderRepository);
 
 		CreateOrderRequest createRequest = new CreateOrderRequest.Builder()
 				.productId(request.getProductId())
 				.side(request.getSide())
 				.clientOrderId(clientOrderId)
 				.orderConfiguration(orderConfig)
+				.retailPortfolioId("e2784456-b137-4a06-89c9-072c9895cbd2")
 				.build();
 
 		Order order = new Order();
 		order.setUserId(userId);
 		order.setClientOrderId(clientOrderId);
-		order.setProductId(request.getProductId());
-		order.setSide(request.getSide().toUpperCase());
-		order.setOrderType(request.getOrderType().toUpperCase());
-		order.setQty(request.getBaseSize() != null ? request.getBaseSize() : 0.0);
-		order.setLimitPrice(request.getLimitPrice());
-		order.setQuoteSize(request.getQuoteSize());
-		order.setDecisionFactors(request.getDecisionFactors());
-		order.setComments(request.getComments());
-		order.setCreatedAt(LocalDateTime.now());
-		order.setUpdatedAt(LocalDateTime.now());
 		
 		if ("SELL".equalsIgnoreCase(order.getSide())
 				&& !validateAvailableQuantityForSell(request.getProductId(), order.getQty())) {
@@ -132,50 +112,36 @@ public class OrderService {
 					userId, request.getProductId(), request.getSide(), request.getOrderType(),
 					request);
 			CreateOrderResponse response = ordersService.createOrder(createRequest);
-
-			if (response.isSuccess()) {
-				order.setCoinbaseOrderId(response.getSuccessResponse().getOrderId());
-				order.setStatus(STATUS_PLACED);
-				order.setCoinbaseOrderId(response.getOrderId());	// Store CoinBase order ID to query order status later on exchange.
-				orderRepository.save(order);
-                try {
-                    updateUserFundsAfterOrder(userId, order);
-                } catch (Exception ex) {
-                    log.warn("Failed to update user funds after placing order: {}", ex.getMessage());
-                }
+			OrderResponse orderResponse = OrderHelper.prepareOrderToPersistFromExchangeResponse(request, response, order);	
+			if (orderResponse.isSuccess()) {
+				synchronized (this) {
+					orderRepository.save(order);
+				}
+				try {
+					updateUserFundsAfterOrder(userId, order);
+					return orderResponse;
+				} catch (Exception ex) {
+					log.warn("Failed to update user funds after placing order: {}", ex.getMessage());
+				}
 				log.info("Order placed successfully for user [{}]: coinbaseOrderId={}", userId, response.getOrderId());
-
-				return buildOrderResponse(true, order.getId(), response.getOrderId(),
-						request.getProductId(), request.getSide(), request.getOrderType(),
-						STATUS_PENDING, null, MSG_ORDER_PLACED);
-			} else {
-				order.setStatus(STATUS_FAILED);
-				order.setFailureReason(response.getFailureReason());
-				orderRepository.save(order);
-				log.warn("Order placement failed for user [{}]: {}", userId, response.getErrorResponse().getMessage());
-
-				return buildOrderResponse(false, order.getId(), null,
-						request.getProductId(), request.getSide(), request.getOrderType(),
-						STATUS_FAILED, response.getFailureReason(), MSG_ORDER_FAILED);
 			}
 		} catch (CoinbaseAdvancedException e) {
-			order.setStatus(STATUS_FAILED);
-			order.setFailureReason(e.getMessage());
-			orderRepository.save(order);
 			log.error("Coinbase API error placing order for user [{}]: {}", userId, e.getMessage());
 
-			return buildOrderResponse(false, order.getId(), null,
+			return OrderHelper.buildOrderResponse(false, order.getId(), null,
 					request.getProductId(), request.getSide(), request.getOrderType(),
 					STATUS_FAILED, e.getMessage(), MSG_COINBASE_ERROR);
 		}
+		return null;
 	}
 
 	private void updateUserFundsAfterOrder(String userId, Order order) {
 		double orderValue = order.getLimitPrice() * order.getQty();
+		double currentFunds = userService.findByUserName(userId).getCurrentFunds();
 		if (SIDE_BUY.equalsIgnoreCase(order.getSide())) {
-			userService.updateUserFunds(userId, -orderValue);
+			userService.updateUserFunds(userId, currentFunds-orderValue);
 		} else if (SIDE_SELL.equalsIgnoreCase(order.getSide())) {
-			userService.updateUserFunds(userId, orderValue);
+			userService.updateUserFunds(userId, currentFunds+orderValue);
 		}
 	}
 
@@ -201,7 +167,7 @@ public class OrderService {
 	}
 
 	/**
-	 * Cancels an order on Coinbase and updates the local record.
+	 * Cancels an order on CoinBase and updates the local record.
 	 *
 	 * @param userId  the authenticated user
 	 * @param orderId the internal database order ID
@@ -243,24 +209,23 @@ public class OrderService {
 					orderRepository.save(order);
 					log.info("Order cancelled for user [{}]: orderId={}", userId, orderId);
 
-					return buildOrderResponse(true, orderId, order.getCoinbaseOrderId(),
+					return OrderHelper.buildOrderResponse(true, orderId, order.getCoinbaseOrderId(),
 							null, null, null,
 							STATUS_CANCELLED, null, MSG_ORDER_CANCELLED);
 				} else {
 					log.warn("Cancel failed for order [{}]: {}", orderId, result.getFailureReason());
-					return buildOrderResponse(false, orderId, order.getCoinbaseOrderId(),
+					return OrderHelper.buildOrderResponse(false, orderId, order.getCoinbaseOrderId(),
 							null, null, null,
 							null, result.getFailureReason(), MSG_CANCEL_FAILED);
 				}
 			}
-
-			return buildOrderResponse(false, orderId, null,
+			return OrderHelper.buildOrderResponse(false, orderId, null,
 					null, null, null,
 					null, null, MSG_CANCEL_NO_RESULT);
 
 		} catch (CoinbaseAdvancedException e) {
 			log.error("Coinbase API error cancelling order [{}]: {}", orderId, e.getMessage());
-			return buildOrderResponse(false, orderId, order.getCoinbaseOrderId(),
+			return OrderHelper.buildOrderResponse(false, orderId, order.getCoinbaseOrderId(),
 					null, null, null,
 					null, e.getMessage(), MSG_CANCEL_API_ERROR);
 		}
@@ -319,32 +284,6 @@ public class OrderService {
 		}
 	}
 
-	// ------------------------------------------------------------------
-	// Internal
-	// ------------------------------------------------------------------
-
-	/**
-	 * Builds an {@link OrderResponse} with the given fields.
-	 * Centralizes response construction to avoid duplication across success,
-	 * failure, and exception paths.
-	 */
-	private OrderResponse buildOrderResponse(boolean success, String orderId,
-			String coinbaseOrderId, String productId, String side,
-			String orderType, String status, String failureReason, String message) {
-
-		return OrderResponse.builder()
-				.success(success)
-				.orderId(orderId)
-				.coinbaseOrderId(coinbaseOrderId)
-				.productId(productId)
-				.side(side)
-				.orderType(orderType)
-				.status(status)
-				.failureReason(failureReason)
-				.message(message)
-				.build();
-	}
-
 	private void validateOrderRequest(OrderRequest request) {
 		if (request.getProductId() == null || request.getProductId().isBlank()) {
 			throw new IllegalArgumentException("productId is required");
@@ -388,7 +327,7 @@ public class OrderService {
 	private Order prepareOrder(String productId, String side, String comments, double price, double qty,
 				String userName, MyCandle lastCandle, MyCandle firstCandle) {
 		// Use cache to compute available quantities instead of direct DB call
-		Map<String, Double> qtys = getQtyBySideFromCache(productId);
+		Map<String, Double> qtys = OrderHelper.getQtyBySideFromCache(orderRepository, productId);
 		double buyQty = qtys.getOrDefault(SIDE_BUY, 0.0);
 		double sellQty = qtys.getOrDefault(SIDE_SELL, 0.0);
 		double qtyInHand = buyQty - sellQty;
@@ -431,7 +370,7 @@ public class OrderService {
 	private boolean validateOrder(Order order) {
 		// Use cache to determine total available quantity instead of DB call
 		// Funds and quantity validation is duplicate.
-		Map<String, Double> qtys = getQtyBySideFromCache(order.getProductId());
+		Map<String, Double> qtys = OrderHelper.getQtyBySideFromCache(orderRepository, order.getProductId());
 		Double availableFunds = userService.findByUserName(order.getUserId()).getCurrentFunds();
 		double totalAvailableQty = qtys.getOrDefault(SIDE_BUY, 0.0) - qtys.getOrDefault(SIDE_SELL, 0.0);
 		if(availableFunds != null && availableFunds <= 0) {
@@ -458,14 +397,14 @@ public class OrderService {
 		List<Order> orders = orderRepository.findByProductIdAndSide(productId, side);
 		log.info("Checking for duplicate orders for product: {}, side: {}, price: {}, qty: {}, found:{}", productId,
 					side, price, qty, orders);
-		Order order = orders.stream().filter(o -> o.getLimitPrice() == price && o.getQty() == qty)
+		Order order = orders.stream().filter(o -> o.getLimitPrice().equals(price) && o.getQty() == qty)
 				.sorted((o2, o1) -> o2.getCreatedAt().compareTo(o1.getCreatedAt())).limit(1).findFirst().orElse(null);
 		LocalDateTime orderTS = order != null ? order.getCreatedAt() : null;
 		if (orderTS != null) {
 			return orderTS.getDayOfYear() == LocalDateTime.now().getDayOfYear()
-					&& orderTS.getMonth() == LocalDateTime.now().getMonth()
+					&& orderTS.getMonth().equals(LocalDateTime.now().getMonth())
 					&& orderTS.getHour() == LocalDateTime.now().getHour()
-					&& (orderTS.getMinute() == LocalDateTime.now().getMinute()) && order.getLimitPrice() == price
+					&& (orderTS.getMinute() == LocalDateTime.now().getMinute()) && order.getLimitPrice().equals(price)
 					&& order.getQty() == qty && order.getSide().equalsIgnoreCase(side);
 		} else {
 			return false; // No previous order found, so not a duplicate
@@ -483,7 +422,7 @@ public class OrderService {
 
 	private boolean validateAvailableQuantityForSell(String productId, double qty) {
 		// Use cache to compute available quantity by side
-		Map<String, Double> mapOfProductsBySide = getQtyBySideFromCache(productId);
+		Map<String, Double> mapOfProductsBySide = OrderHelper.getQtyBySideFromCache(orderRepository, productId);
 
 		Double buyQty = mapOfProductsBySide.getOrDefault(SIDE_BUY, 0.0);
 		Double sellQty = mapOfProductsBySide.getOrDefault(SIDE_SELL, 0.0);
@@ -492,60 +431,50 @@ public class OrderService {
 				+ avlblQty);
 		return avlblQty >= qty;
 	}
-
-	private OrderConfiguration buildOrderConfiguration(OrderRequest request) {
-		String orderType = request.getOrderType().toUpperCase();
-		Double baseSize = request.getBaseSize();
-
-		if (TYPE_MARKET.equals(orderType)) {
-			MarketIoc.Builder marketBuilder = new MarketIoc.Builder();
-			if (request.getBaseSize() != null && request.getBaseSize() > 0) {
-				marketBuilder.baseSize(String.valueOf(request.getBaseSize()));
-			} else {
-				marketBuilder.quoteSize(String.valueOf(request.getQuoteSize()));
-			}
-			return new OrderConfiguration.Builder()
-					.marketMarketIoc(marketBuilder.build())
-					.build();
-		} else {
-			Double limitPrice = request.getLimitPrice();
-			// find 0.5% of limit price and subtract from limit price to set as stop price,
-			// this is to make sure the post only orders won't fail.
-			if (request.getSide().equalsIgnoreCase(SIDE_SELL)) {
-				limitPrice = request.getLimitPrice() + (request.getLimitPrice() * 0.005);
-				Double availableQty = findAvailableQtyForProduct(request.getProductId());
-				if (availableQty != null && availableQty > 0 && request.getBaseSize() > availableQty) {
-					log.info("Adjusting sell order quantity from {} to {} for product: {} based on available quantity.",
-							request.getBaseSize(), availableQty, request.getProductId());
-					 baseSize = availableQty;
+	
+	public void updateOrderStatusFromExchange() {
+		List<Order> orders = orderRepository.findAll();
+		try {
+			orders.stream().filter(o -> !"FILLED".equalsIgnoreCase(o.getStatus()))
+			.map(Order::getCoinbaseOrderId)
+			.filter(id -> id != null && !id.isBlank())
+			.parallel()
+			.map(this::getOrderFromExchange)
+			.filter(response -> response != null && response.getOrder() != null)
+			.forEach(response -> {
+				com.coinbase.advanced.model.orders.Order cbOrder = response.getOrder();
+				if (cbOrder != null) {
+					Order order = orderRepository.findByCoinbaseOrderId(cbOrder.getOrderId()).orElse(null);
+					if (order == null) {
+						log.warn("No local order record found for Coinbase order ID: {}", cbOrder.getOrderId());
+						return;
+					}
+					order.setStatus(cbOrder.getStatus());
+					orderRepository.save(order);
+					log.info("Updated order status from exchange for [{}]: status={}", order.getId(),
+							cbOrder.getStatus());
+				} else {
+					log.warn("No local order record found for Coinbase order ID: {}",
+							response.getOrder().getOrderId());
 				}
-			} else {
-				limitPrice = request.getLimitPrice() - (request.getLimitPrice() * 0.005);
-				// Adjust qty i.e baseSize to MAX_USD_PER_ORDER if order value exceeds max allowed per order.
-				double orderValue = request.getBaseSize() * request.getLimitPrice();
-				if (orderValue > MAX_USD_PER_ORDER) {
-					double adjustedBaseSize = Math.floor(MAX_USD_PER_ORDER / request.getLimitPrice() * 1e8) / 1e8; // avoid floating precision
-					log.info("Adjusting buy order quantity from {} to {} for product: {} to enforce max order value of ${}.",
-							request.getBaseSize(), adjustedBaseSize, request.getProductId(), MAX_USD_PER_ORDER);
-					baseSize = adjustedBaseSize;
-				}
-			}
-			LimitGtc limitGtc = new LimitGtc.Builder()
-					.baseSize(String.valueOf(baseSize))
-					.limitPrice(String.format("%.2f", limitPrice))	//Must be a string with 2 decimal places to avoid CoinBase API validation error.
-					.postOnly(true)
-					.build();
-			return new OrderConfiguration.Builder()
-					.limitLimitGtc(limitGtc)
-					.build();
+			});
+		} catch (Exception e) {
+			log.error("Error updating order status from exchange: {}", e.getMessage());
 		}
 	}
-
-	private Double findAvailableQtyForProduct(String productId) {
-		Map<String, Double> result = getQtyBySideFromCache(productId);
-		double buyQty = result.get(SIDE_BUY);
-		double sellQty = result.get(SIDE_SELL);
-		return buyQty - sellQty;
+		
+	
+	private GetOrderResponse getOrderFromExchange(String coinbaseOrderId) {
+		// This method can be used to fetch the latest order details from CoinBase
+		// and update the local order record. It can be called after placing an order
+		// to ensure we have the correct status, filled size, etc.
+		String userId = "ADMIN"; // Use a default user for fetching order status, or pass as parameter if needed
+		OrdersService ordersService = OrderHelper.getOrderServiceFromCache(clientService, userId, orderServiceCache);
+		if (ordersService == null) {
+			log.error("OrdersService not found in cache for user {}. Cannot fetch order status from exchange.", userId);
+			return null;
+		}
+		return ordersService.getOrder(new GetOrderRequest.Builder().orderId(coinbaseOrderId).build());
 	}
 	
 	public List<Order> findAllOrders() {
@@ -556,15 +485,4 @@ public class OrderService {
 	public List<Order> findByProductId(String productId) {
 		return orderRepository.findByProductId(productId);
 	}
-
-	// ---------------- Redis cache helpers -----------------
-	private Map<String, Double> getQtyBySideFromCache(String productId) {
-        Map<String, Double> result = new HashMap<>();
-        List<Order> orders = orderRepository.findByProductId(productId);
-        double buy = orders.stream().filter(o -> SIDE_BUY.equalsIgnoreCase(o.getSide())).mapToDouble(Order::getQty).sum();
-        double sell = orders.stream().filter(o -> SIDE_SELL.equalsIgnoreCase(o.getSide())).mapToDouble(Order::getQty).sum();
-        result.put(SIDE_BUY, buy);
-        result.put(SIDE_SELL, sell);
-        return result;
-    }
 }

@@ -33,4 +33,6 @@ public final class OrderConstants {
 	public static final String MSG_CANCEL_FAILED = "Order cancellation failed";
 	public static final String MSG_CANCEL_NO_RESULT = "No cancellation result returned from Coinbase";
 	public static final String MSG_CANCEL_API_ERROR = "Coinbase API error during cancellation";
+	
+	public static final double MAX_USD_PER_ORDER = 30.00;
 }

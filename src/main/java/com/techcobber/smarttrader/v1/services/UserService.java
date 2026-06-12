@@ -42,7 +42,14 @@ public class UserService {
 		LocalDateTime now = LocalDateTime.now();
 		user.setCreatedAt(now);
 		user.setUpdatedAt(now);
-		User saved = userRepository.save(user);
+		User saved;
+		synchronized(this) {
+			if (userRepository.existsById(user.getUserId())) {
+				throw new IllegalArgumentException("User already exists: " + user.getUserId());
+			}else {
+				saved = userRepository.save(user);
+			}
+			}
 		log.info("Created user [{}]", saved.getUserId());
 		return saved;
 	}
@@ -81,8 +88,10 @@ public class UserService {
 		}
 		existing.setEnabled(updates.isEnabled());
 		existing.setUpdatedAt(LocalDateTime.now());
-
-		User saved = userRepository.save(existing);
+		User saved;
+		synchronized(this) {
+			saved = userRepository.save(existing);
+		}
 		log.info("Updated user [{}]", userId);
 		return saved;
 	}
@@ -93,7 +102,7 @@ public class UserService {
 	 * @param userId unique user identifier
 	 * @throws IllegalArgumentException if the user does not exist
 	 */
-	public void deleteUser(String userId) {
+	public synchronized void deleteUser(String userId) {
 		if (!userRepository.existsById(userId)) {
 			throw new IllegalArgumentException("User not found: " + userId);
 		}
@@ -118,7 +127,7 @@ public class UserService {
 	 * @param newFunds the new current funds value
 	 * @return the updated user
 	 */
-	public User updateUserFunds(String userId, double newFunds) {
+	public synchronized User updateUserFunds(String userId, double newFunds) {
 		User existing = userRepository.findByUserName(userId);
 		existing.setCurrentFunds(newFunds);
 		existing.setUpdatedAt(LocalDateTime.now());
