@@ -34,4 +34,29 @@ public class UserPreferences {
 	private String timezone;
 	private boolean enabled;
 	private Instant updatedAt;
+
+	/** Maximum % above EMA50 a price may be and still qualify as a valid BUY entry. Default "3.0". */
+	private String ema50ThresholdPct;
+
+	/** Maximum % above nearest support a price may be and still qualify as a valid BUY entry. Default "2.0". */
+	private String supportProximityPct;
+
+	/** ATR multiplier (k) for the ATR component of stop-loss: stopLoss = entry - k × ATR. Default "1.5". */
+	private String atrMultiplier;
+
+	/** ATR spike threshold: if currentATR > spikeMultiplier × avgATR the entry is skipped. Default "2.0". */
+	private String atrSpikeMultiplier;
+
+	/** ATR multiplier (k) for the trailing stop: trailingStop = recentSwingHigh - k × ATR. Default "2.0". */
+	private String trailingAtrMultiplier;
+
+	/** Minimum confidence score required before a BUY is approved by the risk manager. Default "0.65". */
+	private String minEntryScore;
+
+	/**
+	 * Minimum actual reward as a percentage of entry price that a BUY must offer
+	 * after the take-profit is capped at resistance. Filters out tight-spread trades
+	 * where fees and slippage would eliminate any edge. Default "2.0" (2 %).
+	 */
+	private String minRewardPct;
 }

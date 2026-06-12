@@ -65,6 +65,15 @@ public class Order {
 	/** Failure or rejection reason, if any. */
 	private String failureReason;
 
+	/** Stop-loss price persisted at order placement for use in exit evaluation. */
+	private Double stopLoss;
+
+	/** Take-profit price persisted at order placement. */
+	private Double takeProfit;
+
+	/** Numeric entry price (mirrors averageFilledPrice after fill) for exit math. */
+	private Double entryPriceNum;
+
 	/** Free-form decision factors that led to this order (strategy output, indicators, etc.). */
 	private Map<String, String> decisionFactors;
 

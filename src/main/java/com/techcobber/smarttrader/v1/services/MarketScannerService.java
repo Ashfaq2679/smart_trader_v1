@@ -15,6 +15,9 @@ import com.techcobber.smarttrader.v1.models.CoinScanResult;
 import com.techcobber.smarttrader.v1.models.ListCandles;
 import com.techcobber.smarttrader.v1.models.MyCandle;
 import com.techcobber.smarttrader.v1.models.TradeDecision;
+import com.techcobber.smarttrader.v1.models.TradeDecision.Signal;
+import com.techcobber.smarttrader.v1.strategy.MultiTimeframeAnalyzer;
+import com.techcobber.smarttrader.v1.strategy.MultiTimeframeAnalyzer.MultiTimeframeResult;
 import com.techcobber.smarttrader.v1.strategy.PriceActionStrategy;
 import com.techcobber.smarttrader.v1.strategy.TrendAnalyzer;
 import com.techcobber.smarttrader.v1.strategy.PatternUtils;
@@ -39,13 +42,16 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class MarketScannerService {
 
-	private static final int CANDLE_COUNT = 100;
+	private static final int CANDLE_COUNT         = 100;
+	private static final int HTF_CONFIRM_CANDLES  = 50;   // 4H candles (≈ 200h of history)
+	private static final int HTF_DIRECTION_CANDLES = 30;  // 1D candles
 	private static final int TREND_LOOKBACK = 20;
 	private static final String DEFAULT_QUOTE_CURRENCY = "USDC";
 
 	private final CoinbasePublicServiceImpl publicService;
 	private final PriceActionStrategy strategy;
 	private final TrendAnalyzer trendAnalyzer;
+	private final MultiTimeframeAnalyzer mtfAnalyzer;
 
 	public MarketScannerService(CoinbasePublicServiceImpl publicService) {
 		this(publicService, new PriceActionStrategy(), new TrendAnalyzer(), null);
@@ -59,6 +65,7 @@ public class MarketScannerService {
 		this.publicService = publicService;
 		this.strategy = strategy;
 		this.trendAnalyzer = trendAnalyzer;
+		this.mtfAnalyzer = new MultiTimeframeAnalyzer();
 	}
 
 	/**
@@ -152,14 +159,15 @@ public class MarketScannerService {
 	}
 
 	/**
-	 * Analyses a single product: fetches candles, runs strategy, and computes score.
+	 * Analyses a single product: fetches 1H candles, runs strategy, then lazily
+	 * fetches 4H and 1D candles for HTF alignment validation on BUY candidates.
 	 */
 	CoinScanResult analyseProduct(Product product, long startTime, long endTime,
 			Granularity granularity, double medianVolume) {
 
 		String productId = product.getProductId();
 		try {
-			// Fetch candle data
+			// Fetch 1H candle data and sort ascending (API returns newest-first)
 			ListCandles listCandles = publicService.fetchCandles(productId, startTime, endTime, granularity);
 			if (listCandles == null || listCandles.getCandles() == null
 					|| listCandles.getCandles().isEmpty()) {
@@ -167,12 +175,28 @@ public class MarketScannerService {
 				return null;
 			}
 
-			List<MyCandle> candles = listCandles.getCandles();
+			List<MyCandle> candles = sortAscending(listCandles.getCandles());
 			log.debug("Fetched {} candles for {}", candles.size(), productId);
 
-			// Run price action analysis
+			// Run price action analysis (1H — without HTF context first)
 			TradeDecision decision = strategy.analyze(candles, productId);
 			decision.setProductId(productId);
+
+			// --- Lazy HTF fetch: only for BUY candidates ---
+			if (decision.getSignal() == Signal.BUY) {
+				MultiTimeframeResult mtfResult = fetchAndAnalyzeHTF(productId, endTime);
+				if (mtfResult != null && !mtfResult.isAligned()) {
+					log.info("HTF misaligned for {} (1D={}, 4H={}) — downgrading BUY to HOLD",
+							productId, mtfResult.getHtfTrend(), mtfResult.getConfirmTrend());
+					// Re-analyse with HTF context to get the correct HOLD decision and fields
+					decision = strategy.analyze(candles, productId, mtfResult, null, null);
+					decision.setProductId(productId);
+				} else if (mtfResult != null) {
+					// Update HTF fields on the existing decision
+					decision.setHtfTrendDirection(mtfResult.getHtfTrend().name());
+					decision.setConfirmTrendDirection(mtfResult.getConfirmTrend().name());
+				}
+			}
 
 			// Compute trend strength
 			TrendAnalyzer.TrendResult trendResult = trendAnalyzer.analyzeTrend(candles, TREND_LOOKBACK);
@@ -212,6 +236,39 @@ public class MarketScannerService {
 	}
 
 	/**
+	 * Lazily fetches 4H (confirmation) and 1D (direction) candles for a BUY candidate
+	 * and runs HTF alignment analysis.
+	 *
+	 * @return {@link MultiTimeframeResult} or {@code null} if candles cannot be fetched
+	 */
+	private MultiTimeframeResult fetchAndAnalyzeHTF(String productId, long endTime) {
+		try {
+			long confirm4hStart = endTime - granularityToSeconds(Granularity.TWO_HOUR) * 2 * HTF_CONFIRM_CANDLES;
+			ListCandles confirm4h = publicService.fetchCandles(productId, confirm4hStart, endTime, Granularity.TWO_HOUR);
+
+			long direction1dStart = endTime - granularityToSeconds(Granularity.ONE_DAY) * HTF_DIRECTION_CANDLES;
+			ListCandles direction1d = publicService.fetchCandles(productId, direction1dStart, endTime, Granularity.ONE_DAY);
+
+			// Sort ascending — API returns newest-first
+			List<MyCandle> confirmCandles = (confirm4h != null && confirm4h.getCandles() != null)
+					? sortAscending(confirm4h.getCandles()) : List.of();
+			List<MyCandle> htfCandles = (direction1d != null && direction1d.getCandles() != null)
+					? sortAscending(direction1d.getCandles()) : List.of();
+
+			if (confirmCandles.isEmpty() && htfCandles.isEmpty()) {
+				log.debug("No HTF candles available for {} — skipping MTF check", productId);
+				return null;
+			}
+
+			return mtfAnalyzer.analyze(List.of(), confirmCandles, htfCandles);
+
+		} catch (CoinbaseAdvancedException e) {
+			log.warn("Failed to fetch HTF candles for {} — MTF check skipped: {}", productId, e.getMessage());
+			return null;
+		}
+	}
+
+	/**
 	 * Computes the median 24h volume across all products for score normalisation.
 	 */
 	double computeMedianVolume(List<Product> products) {
@@ -245,6 +302,19 @@ public class MarketScannerService {
 		} catch (NumberFormatException e) {
 			return false;
 		}
+	}
+
+	/**
+	 * Sorts a candle list in ascending order of {@code start} timestamp
+	 * (oldest first, newest last), as required by all strategy and indicator classes.
+	 *
+	 * <p>The Coinbase API returns candles in <em>descending</em> order (newest first),
+	 * so this sort must be applied before passing candles to any analysis component.</p>
+	 */
+	static List<MyCandle> sortAscending(List<MyCandle> candles) {
+		return candles.stream()
+				.sorted((a, b) -> Long.compare(a.getStart(), b.getStart()))
+				.toList();
 	}
 
 	static double parseDoubleOrZero(String value) {
