@@ -138,6 +138,13 @@ public class MarketScanScheduler {
 		}
 		return listCandles.getCandles();
 	}
+	
+	@Scheduled(fixedDelayString = "${scanner.candles.interval.ms:3606000}", initialDelayString = "${scanner.candles.initial.delay.ms:180000}")
+	public void updateOrderStatus() {
+		log.info("Scheduled order status update starting…");
+		this.orderService.updateOrderStatusFromExchange();
+		log.info("Scheduled order status update completed.");
+	}
 
 	@Scheduled(fixedDelayString = "${scanner.candles.interval.ms:3600000}", initialDelayString = "${scanner.candles.initial.delay.ms:120000}")
 	public void scheduledCandleFetch() {
