@@ -10,7 +10,6 @@ import com.techcobber.smarttrader.v1.models.TradeDecision;
 import com.techcobber.smarttrader.v1.models.TradeDecision.Signal;
 import com.techcobber.smarttrader.v1.strategy.CandlePatternDetector.DetectedPattern;
 import com.techcobber.smarttrader.v1.strategy.CandlePatternDetector.PatternBias;
-import com.techcobber.smarttrader.v1.strategy.ConsolidationDetector.ConsolidationResult;
 import com.techcobber.smarttrader.v1.strategy.MultiTimeframeAnalyzer.MultiTimeframeResult;
 import com.techcobber.smarttrader.v1.strategy.SupportResistanceDetector.Level;
 import com.techcobber.smarttrader.v1.strategy.SupportResistanceDetector.LevelType;
@@ -22,23 +21,81 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class PriceActionStrategy implements TradingStrategy {
 
-	private static final int MIN_CANDLES = 20;
-	private static final int SR_LOOKBACK = 50;
-	private static final int TREND_LOOKBACK = 20;
+	private static final int    MIN_CANDLES                   = 20;
+	private static final int    SR_LOOKBACK                   = 50;
+	private static final int    TREND_LOOKBACK                = 20;
 
-	// Default entry filter thresholds (overridden by UserPreferences when available)
-	private static final double DEFAULT_EMA50_THRESHOLD_PCT       = 3.0;
-	private static final double DEFAULT_SUPPORT_PROXIMITY_PCT     = 2.0;
-	/** Price must be at least this far below resistance to enter a BUY. Default 2 %. */
-	private static final double DEFAULT_RESISTANCE_PROXIMITY_PCT  = 2.0;
-	private static final double DEFAULT_ATR_SPIKE_MULTIPLIER      = 2.0;
+	// Entry-filter thresholds (overridden per-user via UserPreferences)
+	private static final double DEFAULT_EMA50_THRESHOLD_PCT      = 3.0;
+	private static final double DEFAULT_SUPPORT_PROXIMITY_PCT    = 2.0;
+	/** Price must be at least this far below resistance to enter a BUY. */
+	private static final double DEFAULT_RESISTANCE_PROXIMITY_PCT = 2.0;
+	private static final double DEFAULT_ATR_SPIKE_MULTIPLIER     = 2.0;
 
-	private final SupportResistanceDetector srDetector       = new SupportResistanceDetector();
-	private final TrendAnalyzer             trendAnalyzer     = new TrendAnalyzer();
-	private final CandlePatternDetector     patternDetector   = new CandlePatternDetector();
-	private final EmaIndicator              emaIndicator      = new EmaIndicator();
-	private final AtrIndicator              atrIndicator      = new AtrIndicator();
-	private final ConsolidationDetector     consolidationDetector = new ConsolidationDetector();
+	// Candidate validation constants
+	/** Minimum reward-to-risk ratio; candidates below this are invalidated. */
+	private static final double MIN_RR                    = 2.0;
+	/** Minimum edge score (out of {@value #MAX_SCORE_NORM}) to fire a signal. */
+	private static final int    MIN_SCORE                 = 4;
+	/** Trend strength above this threshold is considered "strong". */
+	private static final double STRONG_TREND_THRESHOLD    = 0.5;
+	/** Score denominator for confidence normalisation. */
+	private static final double MAX_SCORE_NORM            = 12.0;
+	/** S/R range below this percentage is treated as a chop zone — no trade. */
+	private static final double MIN_RANGE_PCT             = 3.0;
+	/** ATR fraction used as buffer on stop and target levels for realistic R:R. */
+	private static final double ATR_BUFFER_MULTIPLIER     = 0.5;
+	/** EMA distance below this percentage is treated as neutral — no EMA alignment bonus. */
+	private static final double EMA_NEUTRAL_THRESHOLD     = 0.5;
+
+	private final SupportResistanceDetector srDetector            = new SupportResistanceDetector();
+	private final TrendAnalyzer             trendAnalyzer          = new TrendAnalyzer();
+	private final CandlePatternDetector     patternDetector        = new CandlePatternDetector();
+	private final EmaIndicator              emaIndicator           = new EmaIndicator();
+	private final AtrIndicator              atrIndicator           = new AtrIndicator();
+	private final ConsolidationDetector     consolidationDetector  = new ConsolidationDetector();
+
+	// -----------------------------------------------------------------------
+	// Private value types — carry all intermediate analysis results
+	// -----------------------------------------------------------------------
+
+	/**
+	 * Carries every indicator, filter flag, and computed boolean needed by
+	 * {@link #evaluateCandidates} so that {@link #analyze} stays thin.
+	 */
+	private record AnalysisContext(
+			double  currentPrice,
+			double  ema50,
+			double  ema9,
+			double  ema21,
+			double  atr,
+			double  distanceFromEma50Pct,
+			double  recentSwingLow,
+			boolean consolidationDetected,
+			boolean atrSpike,
+			Double  nearestSupport,
+			Double  nearestResistance,
+			List<Level>           allLevels,
+			TrendResult           trend,
+			List<DetectedPattern> patterns,
+			boolean isAboveEMA,
+			boolean bullishLocation,
+			boolean bearishLocation,
+			boolean nearSupport,
+			boolean nearResistance,
+			boolean htfBullish,
+			boolean htfBearish,
+			double  ema50ThresholdPct,
+			double  resistanceProximityPct,
+			MultiTimeframeResult  mtfResult
+	) {}
+
+	/** Outcome of the full candidate pipeline (signal + edge score + R:R). */
+	private record SignalResult(Signal signal, int score, double rr) {}
+
+	// -----------------------------------------------------------------------
+	// Public API
+	// -----------------------------------------------------------------------
 
 	@Override
 	public String getName() {
@@ -53,10 +110,11 @@ public class PriceActionStrategy implements TradingStrategy {
 	/**
 	 * Full analysis with optional Higher Time Frame context.
 	 *
-	 * @param candles     1H candles (entry timeframe)
-	 * @param productId   trading pair identifier
-	 * @param mtfResult   optional MTF alignment result; BUY blocked if HTF is DOWN, SELL blocked if HTF is UP
-	 * @param prefs       optional user preferences for threshold overrides; {@code null} uses defaults
+	 * @param candles             1H candles (entry timeframe)
+	 * @param productId           trading pair identifier
+	 * @param mtfResult           optional MTF alignment; BUY blocked if HTF DOWN, SELL blocked if HTF UP
+	 * @param prefs               optional user-preference overrides; {@code null} → defaults
+	 * @param consolidationOverride when non-null, bypasses the built-in consolidation detector
 	 */
 	public TradeDecision analyze(List<MyCandle> candles, String productId,
 			MultiTimeframeResult mtfResult,
@@ -66,49 +124,31 @@ public class PriceActionStrategy implements TradingStrategy {
 		log.info("=== PriceAction Strategy Analysis ===");
 		log.info("Analyzing {} candles", candles == null ? 0 : candles.size());
 
+		// Guard: insufficient data
 		if (candles == null || candles.size() < MIN_CANDLES) {
-			log.warn("Insufficient candles for analysis (need at least {}, got {})",
+			log.warn("Insufficient candles (need at least {}, got {})",
 					MIN_CANDLES, candles == null ? 0 : candles.size());
 			return TradeDecision.builder()
-					.signal(Signal.HOLD)
-					.confidence(0.0)
+					.signal(Signal.HOLD).confidence(0.0)
 					.reasoning("Insufficient data: need at least " + MIN_CANDLES + " candles")
-					.detectedPatterns(List.of())
-					.trendDirection("UNKNOWN")
+					.detectedPatterns(List.of()).trendDirection("UNKNOWN")
 					.consolidationDetected(false)
 					.timestamp(LocalDateTime.now(ZoneOffset.UTC))
 					.build();
 		}
 
-		MyCandle latest = candles.get(candles.size() - 1);
-		double currentPrice = latest.getClose();
+		// Section 0: compute all indicators, S/R, trend, patterns, and location flags
+		AnalysisContext ctx = buildContext(candles, prefs, mtfResult, consolidationOverride);
 
-		// --- Pre-flight: Compute EMA50 and ATR ---
-		double ema50 = emaIndicator.calculate(candles, 50);
-		double atr   = atrIndicator.calculate(candles);
-		double distanceFromEma50Pct = ema50 > 0 ? ((currentPrice - ema50) / ema50) * 100.0 : 0.0;
-
-		log.info("EMA50={} | ATR={} | distanceFromEMA50={}%",
-				String.format("%.4f", ema50),
-				String.format("%.4f", atr),
-				String.format("%.2f", distanceFromEma50Pct));
-
-		// --- Pre-flight: Consolidation check ---
-		boolean consolidationDetected = consolidationOverride != null
-				? consolidationOverride
-				: consolidationDetector.detect(candles, TREND_LOOKBACK).isConsolidating();
-
-		if (consolidationDetected) {
-			log.info("HOLD: consolidating market detected — skipping entry");
+		// Section 1: consolidation → immediate HOLD (chop zone)
+		if (ctx.consolidationDetected()) {
+			log.info("HOLD: consolidating market — skipping entry");
 			return TradeDecision.builder()
-					.signal(Signal.HOLD)
-					.confidence(0.0)
+					.signal(Signal.HOLD).confidence(0.0)
 					.reasoning("Consolidating market — no directional entry")
-					.detectedPatterns(List.of())
-					.trendDirection("SIDEWAYS")
-					.ema50(ema50)
-					.atr(atr)
-					.distanceFromEma50Pct(distanceFromEma50Pct)
+					.detectedPatterns(List.of()).trendDirection("SIDEWAYS")
+					.ema50(ctx.ema50()).atr(ctx.atr())
+					.distanceFromEma50Pct(ctx.distanceFromEma50Pct())
 					.consolidationDetected(true)
 					.htfTrendDirection(mtfResult != null ? mtfResult.getHtfTrend().name() : null)
 					.confirmTrendDirection(mtfResult != null ? mtfResult.getConfirmTrend().name() : null)
@@ -116,154 +156,32 @@ public class PriceActionStrategy implements TradingStrategy {
 					.build();
 		}
 
-		// --- Pre-flight: ATR spike check ---
-		double spikeMultiplier = parseDoubleOrDefault(prefs != null ? prefs.getAtrSpikeMultiplier() : null, DEFAULT_ATR_SPIKE_MULTIPLIER);
-		if (atrIndicator.isSpike(candles, spikeMultiplier)) {
-			log.info("HOLD: ATR spike detected — high volatility, skipping entry");
-			return TradeDecision.builder()
-					.signal(Signal.HOLD)
-					.confidence(0.0)
-					.reasoning("ATR spike — high volatility, no entry")
-					.detectedPatterns(List.of())
-					.trendDirection("UNKNOWN")
-					.ema50(ema50)
-					.atr(atr)
-					.distanceFromEma50Pct(distanceFromEma50Pct)
-					.consolidationDetected(false)
-					.htfTrendDirection(mtfResult != null ? mtfResult.getHtfTrend().name() : null)
-					.confirmTrendDirection(mtfResult != null ? mtfResult.getConfirmTrend().name() : null)
-					.timestamp(LocalDateTime.now(ZoneOffset.UTC))
-					.build();
-		}
+		// Sections 2–8: full candidate pipeline → signal + score + R:R
+		SignalResult result = evaluateCandidates(ctx);
 
-		// Step 1: Support/Resistance
-		log.info("--- Step 1: Support/Resistance Detection ---");
-		List<Level> levels = srDetector.detectLevels(candles, SR_LOOKBACK);
+		List<String> patternNames = ctx.patterns().stream()
+				.map(DetectedPattern::getName).toList();
+		double confidence = normalizeScore(result.signal(), result.score());
+		String reasoning  = buildReasoning(result.signal(), ctx.trend(), ctx.patterns(),
+				ctx.currentPrice(), ctx.nearestSupport(), ctx.nearestResistance());
 
-		List<Level> supports = levels.stream()
-				.filter(l -> l.getType() == LevelType.SUPPORT)
-				.toList();
-		List<Level> resistances = levels.stream()
-				.filter(l -> l.getType() == LevelType.RESISTANCE)
-				.toList();
-
-		log.debug("Support levels: {}", supports.stream()
-				.map(l -> String.format("%.2f (strength:%d)", l.getPrice(), l.getStrength()))
-				.toList());
-		log.debug("Resistance levels: {}", resistances.stream()
-				.map(l -> String.format("%.2f (strength:%d)", l.getPrice(), l.getStrength()))
-				.toList());
-
-		Double nearestSupport = supports.stream()
-				.map(Level::getPrice)
-				.filter(p -> p < currentPrice)
-				.max(Double::compareTo)
-				.orElse(null);
-		Double nearestResistance = resistances.stream()
-				.map(Level::getPrice)
-				.filter(p -> p > currentPrice)
-				.min(Double::compareTo)
-				.orElse(null);
-
-		log.info("Current price: {} | Nearest support: {} | Nearest resistance: {}",
-				String.format("%.2f", currentPrice),
-				nearestSupport != null ? String.format("%.2f", nearestSupport) : "none",
-				nearestResistance != null ? String.format("%.2f", nearestResistance) : "none");
-
-		// Step 2: Trend Analysis
-		log.info("--- Step 2: Trend Analysis ---");
-		TrendResult trend = trendAnalyzer.analyzeTrend(candles, TREND_LOOKBACK);
-		log.info("Trend analysis: {} (strength: {})", trend.getDirection(), String.format("%.2f", trend.getStrength()));
-
-		// Step 3: Candle Pattern Detection
-		log.info("--- Step 3: Candle Pattern Detection ---");
-		List<DetectedPattern> detectedPatterns = patternDetector.detectPatterns(candles);
-
-		List<String> patternNames = detectedPatterns.stream()
-				.map(DetectedPattern::getName)
-				.toList();
-		log.debug("Detected candle patterns: {}", patternNames);
-
-		long bullishPatterns = detectedPatterns.stream()
-				.filter(p -> p.getBias() == PatternBias.BULLISH)
-				.count();
-		long bearishPatterns = detectedPatterns.stream()
-				.filter(p -> p.getBias() == PatternBias.BEARISH)
-				.count();
-		long neutralPatterns = detectedPatterns.stream()
-				.filter(p -> p.getBias() == PatternBias.NEUTRAL)
-				.count();
-
-		log.info("Pattern bias breakdown — Bullish: {}, Bearish: {}, Neutral: {}",
-				bullishPatterns, bearishPatterns, neutralPatterns);
-
-		// Step 4: Location filter — direction-aware EMA and proximity checks
-		double ema50ThresholdPct       = parseDoubleOrDefault(prefs != null ? prefs.getEma50ThresholdPct() : null, DEFAULT_EMA50_THRESHOLD_PCT);
-		double supportProximityPct     = parseDoubleOrDefault(prefs != null ? prefs.getSupportProximityPct() : null, DEFAULT_SUPPORT_PROXIMITY_PCT);
-		double resistanceProximityPct  = parseDoubleOrDefault(prefs != null ? prefs.getResistanceProximityPct() : null, DEFAULT_RESISTANCE_PROXIMITY_PCT);
-
-		// Direction-aware EMA proximity (prevents conflating pullback with breakdown)
-		boolean isAboveEMA        = currentPrice >= ema50;
-		// BUY: price above EMA and within threshold → healthy pullback, not extended
-		boolean onBullishPullback = isAboveEMA && distanceFromEma50Pct <= ema50ThresholdPct;
-		// SELL: price is not more than threshold% below EMA → reject/breakdown, not extended short
-		boolean onEMAReject       = distanceFromEma50Pct >= -ema50ThresholdPct;
-
-		boolean nearSupport    = nearestSupport != null
-				&& ((currentPrice - nearestSupport) / currentPrice * 100.0) <= supportProximityPct;
-		// Shared resistance proximity (reused for both BUY guard and SELL entry)
-		boolean nearResistance = nearestResistance != null
-				&& ((nearestResistance - currentPrice) / currentPrice * 100.0) <= resistanceProximityPct;
-
-		// BUY: must be in a bullish pullback or near support, and NOT already crowding resistance
-		boolean buyLocationOK  = (onBullishPullback || nearSupport) && !nearResistance;
-		// SELL: price is rejecting from/near EMA, or already near resistance (high R:R for short)
-		boolean sellLocationOK = onEMAReject || nearResistance;
-
-		log.info("Location filter — EMA50 dist={}% (thr={}%) | isAboveEMA={} | onBullishPullback={} | onEMAReject={} | nearSupport={} | nearResistance={} (gap={}%, thr={}%) | buyLocationOK={} | sellLocationOK={}",
-				String.format("%.2f", distanceFromEma50Pct), ema50ThresholdPct,
-				isAboveEMA, onBullishPullback, onEMAReject, nearSupport,
-				nearResistance,
-				nearestResistance != null ? String.format("%.2f", (nearestResistance - currentPrice) / currentPrice * 100.0) : "N/A",
-				resistanceProximityPct, buyLocationOK, sellLocationOK);
-
-		// --- Pre-flight: HTF alignment gates ---
-		boolean htfBlocksBuy  = mtfResult != null && mtfResult.getHtfTrend() == TrendDirection.DOWN;
-		boolean htfBlocksSell = mtfResult != null && mtfResult.getHtfTrend() == TrendDirection.UP;
-		if (htfBlocksBuy)  log.info("HTF(1D) is DOWN — BUY signals suppressed for this product");
-		if (htfBlocksSell) log.info("HTF(1D) is UP — SELL signals suppressed for this product");
-
-		// Step 5: Signal determination
-		log.info("--- Step 5: Signal Determination ---");
-		Signal signal = determineSignal(trend, detectedPatterns, currentPrice,
-				nearestSupport, nearestResistance, levels,
-				buyLocationOK, sellLocationOK, htfBlocksBuy, htfBlocksSell,
-				candles, ema50);
-
-		// Step 6: Confidence calculation
-		double confidence = calculateConfidence(signal, trend, detectedPatterns,
-				currentPrice, nearestSupport, nearestResistance);
-
-		// Step 7: Build reasoning
-		String reasoning = buildReasoning(signal, trend, detectedPatterns,
-				currentPrice, nearestSupport, nearestResistance);
-
-		log.info("=== Product: {} | Signal: {} | Confidence: {} | Patterns: {} | Reasoning: {} ===",
-				productId, signal, String.format("%.2f", confidence), patternNames, reasoning);
+		log.info("=== Product: {} | Signal: {} | Confidence: {} | Score: {} | R:R: {} | Patterns: {} ===",
+				productId, result.signal(), String.format("%.2f", confidence),
+				result.score(), String.format("%.2f", result.rr()), patternNames);
 
 		return TradeDecision.builder()
-				.signal(signal)
+				.signal(result.signal())
 				.confidence(confidence)
 				.reasoning(reasoning)
 				.detectedPatterns(patternNames)
-				.trendDirection(trend.getDirection().name())
-				.nearestSupport(nearestSupport)
-				.nearestResistance(nearestResistance)
-				.ema50(ema50)
-				.atr(atr)
-				.distanceFromEma50Pct(Math.round(distanceFromEma50Pct * 100.0) / 100.0)
+				.trendDirection(ctx.trend().getDirection().name())
+				.nearestSupport(ctx.nearestSupport())
+				.nearestResistance(ctx.nearestResistance())
+				.ema50(ctx.ema50())
+				.atr(ctx.atr())
+				.distanceFromEma50Pct(Math.round(ctx.distanceFromEma50Pct() * 100.0) / 100.0)
 				.consolidationDetected(false)
-				.nearResistanceDetected(nearResistance)
+				.nearResistanceDetected(ctx.nearResistance())
 				.htfTrendDirection(mtfResult != null ? mtfResult.getHtfTrend().name() : null)
 				.confirmTrendDirection(mtfResult != null ? mtfResult.getConfirmTrend().name() : null)
 				.entryScore(confidence)
@@ -271,242 +189,336 @@ public class PriceActionStrategy implements TradingStrategy {
 				.build();
 	}
 
-	private Signal determineSignal(TrendResult trend, List<DetectedPattern> patterns,
-			double currentPrice, Double nearestSupport, Double nearestResistance,
-			List<Level> allLevels, boolean buyLocationOK, boolean sellLocationOK,
-			boolean htfBlocksBuy, boolean htfBlocksSell,
-			List<MyCandle> candles, double ema50) {
+	// -----------------------------------------------------------------------
+	// Section 0: build analysis context
+	// -----------------------------------------------------------------------
 
-		long bullishCount = patterns.stream().filter(p -> p.getBias() == PatternBias.BULLISH).count();
-		long bearishCount = patterns.stream().filter(p -> p.getBias() == PatternBias.BEARISH).count();
+	private AnalysisContext buildContext(List<MyCandle> candles,
+			com.techcobber.smarttrader.v1.models.UserPreferences prefs,
+			MultiTimeframeResult mtfResult,
+			Boolean consolidationOverride) {
 
-		// ----------------------------------------------------------------
-		// SELL / Exit signals — evaluated first; aggressive for SPOT
-		// ----------------------------------------------------------------
+		double currentPrice = candles.get(candles.size() - 1).getClose();
 
-		// EMA crossover momentum exit: EMA9 crosses below EMA21 and price is below EMA50
+		// Indicators
+		double ema50 = emaIndicator.calculate(candles, 50);
 		double ema9  = emaIndicator.calculate(candles, 9);
 		double ema21 = emaIndicator.calculate(candles, 21);
-		boolean emaCrossDown     = ema9 < ema21;
-		boolean priceBelowEma50  = currentPrice < ema50;
-		boolean momentumSell     = emaCrossDown && priceBelowEma50;
+		double atr   = atrIndicator.calculate(candles);
+		double distanceFromEma50Pct = ema50 > 0 ? ((currentPrice - ema50) / ema50) * 100.0 : 0.0;
+		double recentSwingLow = atrIndicator.getRecentSwingLow(candles, 5);
 
-		// Bearish structure break: price below recent swing low (last 5 candles)
-		double recentSwingLow    = atrIndicator.getRecentSwingLow(candles, 5);
-		boolean structureBreak   = currentPrice < recentSwingLow;
+		log.info("EMA50={} | EMA9={} | EMA21={} | ATR={} | distanceFromEMA50={}%",
+				String.format("%.4f", ema50), String.format("%.4f", ema9),
+				String.format("%.4f", ema21), String.format("%.4f", atr),
+				String.format("%.2f", distanceFromEma50Pct));
 
-		if ((momentumSell || structureBreak) && trend.getDirection() != TrendDirection.UP) {
-			String reason = momentumSell ? "EMA momentum cross (EMA9<EMA21 + below EMA50)" : "Bearish structure break";
-			log.info("SELL signal (aggressive exit): {}", reason);
-			return Signal.SELL;
+		// Section 1 flags (consolidation acted on in analyze(); atrSpike acted on in §6)
+		boolean consolidationDetected = consolidationOverride != null
+				? consolidationOverride
+				: consolidationDetector.detect(candles, TREND_LOOKBACK).isConsolidating();
+		double spikeMultiplier = parseDoubleOrDefault(
+				prefs != null ? prefs.getAtrSpikeMultiplier() : null, DEFAULT_ATR_SPIKE_MULTIPLIER);
+		boolean atrSpike = atrIndicator.isSpike(candles, spikeMultiplier);
+		if (atrSpike) log.info("ATR spike detected — volatility context will gate entries (§6)");
+
+		// Step 1: S/R detection
+		log.info("--- Step 1: Support / Resistance Detection ---");
+		List<Level> levels     = srDetector.detectLevels(candles, SR_LOOKBACK);
+		List<Level> supports   = levels.stream().filter(l -> l.getType() == LevelType.SUPPORT).toList();
+		List<Level> resistances = levels.stream().filter(l -> l.getType() == LevelType.RESISTANCE).toList();
+
+		log.debug("Supports: {}", supports.stream()
+				.map(l -> String.format("%.2f(%d)", l.getPrice(), l.getStrength())).toList());
+		log.debug("Resistances: {}", resistances.stream()
+				.map(l -> String.format("%.2f(%d)", l.getPrice(), l.getStrength())).toList());
+
+		Double nearestSupport = supports.stream()
+				.map(Level::getPrice).filter(p -> p < currentPrice).max(Double::compareTo).orElse(null);
+		Double nearestResistance = resistances.stream()
+				.map(Level::getPrice).filter(p -> p > currentPrice).min(Double::compareTo).orElse(null);
+
+		log.info("Price: {} | Support: {} | Resistance: {}",
+				String.format("%.2f", currentPrice),
+				nearestSupport    != null ? String.format("%.2f", nearestSupport)    : "none",
+				nearestResistance != null ? String.format("%.2f", nearestResistance) : "none");
+
+		// Step 2: Trend analysis
+		log.info("--- Step 2: Trend Analysis ---");
+		TrendResult trend = trendAnalyzer.analyzeTrend(candles, TREND_LOOKBACK);
+		log.info("Trend: {} (strength: {})", trend.getDirection(), String.format("%.2f", trend.getStrength()));
+
+		// Step 3: Pattern detection
+		log.info("--- Step 3: Pattern Detection ---");
+		List<DetectedPattern> patterns = patternDetector.detectPatterns(candles);
+		long bullishPats = patterns.stream().filter(p -> p.getBias() == PatternBias.BULLISH).count();
+		long bearishPats = patterns.stream().filter(p -> p.getBias() == PatternBias.BEARISH).count();
+		long neutralPats = patterns.stream().filter(p -> p.getBias() == PatternBias.NEUTRAL).count();
+		log.info("Patterns — Bullish: {}, Bearish: {}, Neutral: {}", bullishPats, bearishPats, neutralPats);
+
+		// Section 2: location analysis (direction-aware, pseudocode-aligned)
+		double ema50ThresholdPct      = parseDoubleOrDefault(
+				prefs != null ? prefs.getEma50ThresholdPct() : null, DEFAULT_EMA50_THRESHOLD_PCT);
+		double supportProximityPct    = parseDoubleOrDefault(
+				prefs != null ? prefs.getSupportProximityPct() : null, DEFAULT_SUPPORT_PROXIMITY_PCT);
+		double resistanceProximityPct = parseDoubleOrDefault(
+				prefs != null ? prefs.getResistanceProximityPct() : null, DEFAULT_RESISTANCE_PROXIMITY_PCT);
+
+		boolean isAboveEMA      = currentPrice >= ema50;
+		// BUY-side: price is above EMA and not overextended
+		boolean pullbackToEMA   = isAboveEMA  && distanceFromEma50Pct <= ema50ThresholdPct;
+		// SELL-side: price is below EMA but not already overextended to the downside
+		boolean rejectionFromEMA = !isAboveEMA && Math.abs(distanceFromEma50Pct) <= ema50ThresholdPct;
+
+		boolean nearSupport    = nearestSupport != null
+				&& ((currentPrice - nearestSupport) / currentPrice * 100.0) <= supportProximityPct;
+		boolean nearResistance = nearestResistance != null
+				&& ((nearestResistance - currentPrice) / currentPrice * 100.0) <= resistanceProximityPct;
+
+		// Both location conditions require price to be on the correct side of EMA
+		boolean bullishLocation = isAboveEMA  && (nearSupport    || pullbackToEMA);
+		boolean bearishLocation = !isAboveEMA && (nearResistance || rejectionFromEMA);
+
+		log.info("Location — isAboveEMA={} | pullback={} | rejection={} | nearSupport={} | nearResistance={} (gap={}%, thr={}%) | bullish={} | bearish={}",
+				isAboveEMA, pullbackToEMA, rejectionFromEMA, nearSupport, nearResistance,
+				nearestResistance != null
+						? String.format("%.2f", (nearestResistance - currentPrice) / currentPrice * 100.0) : "N/A",
+				resistanceProximityPct, bullishLocation, bearishLocation);
+
+		// Section 3: HTF alignment (null-safe: absent MTF data never blocks a candidate)
+		boolean htfBullish = mtfResult == null || mtfResult.getHtfTrend() == TrendDirection.UP;
+		boolean htfBearish = mtfResult == null || mtfResult.getHtfTrend() == TrendDirection.DOWN;
+		if (mtfResult != null) {
+			log.info("HTF(1D): {} | htfBullish={} | htfBearish={}",
+					mtfResult.getHtfTrend(), htfBullish, htfBearish);
 		}
 
-		// Classic SELL patterns — gated by location and HTF alignment
-		if (htfBlocksSell) {
-			log.info("SELL blocked: HTF(1D) trend is UP");
-		} else if (!sellLocationOK) {
-			log.info("SELL blocked: location filter not met (price extended below EMA, not near resistance)");
-		} else {
-			boolean breakdownBelow = false;
-			if (nearestSupport != null) {
-				double supportTolerance = nearestSupport * 0.002;
-				breakdownBelow = currentPrice < nearestSupport - supportTolerance;
-				if (breakdownBelow) {
-					log.info("Breakdown detected: price {} below support {}", String.format("%.2f", currentPrice), String.format("%.2f", nearestSupport));
-				}
-			}
-
-			boolean rejectedAtResistance = false;
-			if (nearestResistance != null) {
-				double proximity = Math.abs(currentPrice - nearestResistance) / nearestResistance;
-				rejectedAtResistance = proximity < 0.005 && bearishCount > 0;
-				if (rejectedAtResistance) {
-					log.info("Rejection at resistance {} with bearish patterns", String.format("%.2f", nearestResistance));
-				}
-			}
-
-			if (breakdownBelow && trend.getDirection() == TrendDirection.DOWN && bearishCount > 0) {
-				log.info("SELL signal: breakdown below support in downtrend with bearish patterns");
-				return Signal.SELL;
-			}
-
-			if (rejectedAtResistance && trend.getDirection() != TrendDirection.UP) {
-				log.info("SELL signal: rejection at resistance with bearish patterns and non-bullish trend");
-				return Signal.SELL;
-			}
-
-			if (bearishCount >= 2 && trend.getDirection() == TrendDirection.DOWN) {
-				log.info("SELL signal: multiple bearish patterns ({}) aligned with downtrend", bearishCount);
-				return Signal.SELL;
-			}
-		}
-
-		// ----------------------------------------------------------------
-		// BUY signals — gated by location filter and HTF alignment
-		// ----------------------------------------------------------------
-
-		if (htfBlocksBuy) {
-			log.info("BUY blocked: HTF(1D) trend is DOWN");
-			return Signal.HOLD;
-		}
-
-		if (!buyLocationOK) {
-			log.info("BUY blocked: location filter not met (see location filter log above for details)");
-			return Signal.HOLD;
-		}
-
-		boolean breakoutAbove = false;
-		if (nearestResistance != null) {
-			double resistanceTolerance = nearestResistance * 0.002;
-			breakoutAbove = currentPrice > nearestResistance + resistanceTolerance;
-			if (breakoutAbove) {
-				log.info("Breakout detected: price {} above resistance {}", String.format("%.2f", currentPrice), String.format("%.2f", nearestResistance));
-			}
-		}
-
-		boolean bouncedAtSupport = false;
-		if (nearestSupport != null) {
-			double proximity = Math.abs(currentPrice - nearestSupport) / nearestSupport;
-			bouncedAtSupport = proximity < 0.005 && bullishCount > 0;
-			if (bouncedAtSupport) {
-				log.info("Bounce at support {} with bullish patterns", String.format("%.2f", nearestSupport));
-			}
-		}
-
-		if (breakoutAbove && trend.getDirection() == TrendDirection.UP && bullishCount > 0) {
-			log.info("BUY signal: breakout above resistance in uptrend with bullish patterns");
-			return Signal.BUY;
-		}
-
-		if (bouncedAtSupport && trend.getDirection() != TrendDirection.DOWN) {
-			log.info("BUY signal: bounce at support with bullish patterns and non-bearish trend");
-			return Signal.BUY;
-		}
-
-		if (bullishCount >= 2 && trend.getDirection() == TrendDirection.UP) {
-			log.info("BUY signal: multiple bullish patterns ({}) aligned with uptrend", bullishCount);
-			return Signal.BUY;
-		}
-
-		log.info("HOLD signal: no strong confluence detected (bullish: {}, bearish: {}, trend: {})",
-				bullishCount, bearishCount, trend.getDirection());
-		return Signal.HOLD;
+		return new AnalysisContext(
+				currentPrice, ema50, ema9, ema21, atr, distanceFromEma50Pct, recentSwingLow,
+				consolidationDetected, atrSpike,
+				nearestSupport, nearestResistance, levels,
+				trend, patterns,
+				isAboveEMA, bullishLocation, bearishLocation, nearSupport, nearResistance,
+				htfBullish, htfBearish,
+				ema50ThresholdPct, resistanceProximityPct,
+				mtfResult);
 	}
 
-	private double calculateConfidence(Signal signal, TrendResult trend,
-			List<DetectedPattern> patterns, double currentPrice,
-			Double nearestSupport, Double nearestResistance) {
+	// -----------------------------------------------------------------------
+	// Sections 2–8: candidate pipeline (pseudocode-aligned)
+	// -----------------------------------------------------------------------
 
-		if (signal == Signal.HOLD) {
-			return 0.0;
-		}
+	private SignalResult evaluateCandidates(AnalysisContext ctx) {
 
-		double confidence = 0.3;
+	    double price = ctx.currentPrice();
 
-		// Trend alignment bonus
-		boolean trendAligned = (signal == Signal.BUY && trend.getDirection() == TrendDirection.UP)
-				|| (signal == Signal.SELL && trend.getDirection() == TrendDirection.DOWN);
-		if (trendAligned) {
-			confidence += 0.2 * trend.getStrength();
-			log.debug("Trend alignment bonus: +{}", String.format("%.2f", 0.2 * trend.getStrength()));
-		}
+	    long bullishCount = ctx.patterns().stream()
+	            .filter(p -> p.getBias() == PatternBias.BULLISH).count();
+	    long bearishCount = ctx.patterns().stream()
+	            .filter(p -> p.getBias() == PatternBias.BEARISH).count();
 
-		// Pattern strength bonus
-		long relevantPatterns = patterns.stream()
-				.filter(p -> (signal == Signal.BUY && p.getBias() == PatternBias.BULLISH)
-						|| (signal == Signal.SELL && p.getBias() == PatternBias.BEARISH))
-				.count();
-		boolean hasStrongPattern = PatternUtils.hasStrongPattern(patterns);
-		confidence += Math.min(0.25, relevantPatterns * 0.08);
-		if (hasStrongPattern) {
-			confidence += 0.1;
-			log.debug("Strong pattern bonus: +0.10");
-		}
+	    // ----------------------------------------------------------------
+	    // 0. NO-TRADE ZONE (tight range filter)
+	    // ----------------------------------------------------------------
+	    if (ctx.nearestSupport() != null && ctx.nearestResistance() != null) {
+	        double rangePct = (ctx.nearestResistance() - ctx.nearestSupport()) / price * 100.0;
 
-		// S/R proximity bonus
-		if (signal == Signal.BUY && nearestSupport != null) {
-			double proximity = (currentPrice - nearestSupport) / currentPrice;
-			if (proximity < 0.02) {
-				confidence += 0.15;
-				log.debug("Close to support bonus: +0.15");
-			} else if (proximity < 0.05) {
-				confidence += 0.05;
-				log.debug("Near support bonus: +0.05");
-			}
-		}
-		if (signal == Signal.SELL && nearestResistance != null) {
-			double proximity = (nearestResistance - currentPrice) / currentPrice;
-			if (proximity < 0.02) {
-				confidence += 0.15;
-				log.debug("Close to resistance bonus: +0.15");
-			} else if (proximity < 0.05) {
-				confidence += 0.05;
-				log.debug("Near resistance bonus: +0.05");
-			}
-		}
+	        if (rangePct < MIN_RANGE_PCT) {
+	            log.info("HOLD: tight range detected ({}%) — no-trade zone",
+	                    String.format("%.2f", rangePct));
+	            return new SignalResult(Signal.HOLD, 0, 1.0);
+	        }
+	    }
 
-		// New: incorporate Risk:Reward into confidence
-		double rr = calculateRiskRewardRatio(signal, currentPrice, nearestSupport, nearestResistance);
-		log.debug("Calculated Risk:Reward (reward/risk) = {}", String.format("%.2f", rr));
+	    // ----------------------------------------------------------------
+	    // 1. PROTECTIVE SELL (but NOT into support)
+	    // ----------------------------------------------------------------
+	    boolean emaCrossDown    = ctx.ema9() < ctx.ema21();
+	    boolean priceBelowEma50 = price < ctx.ema50();
+	    boolean momentumSell    = emaCrossDown && priceBelowEma50;
+	    boolean structureBreak  = price < ctx.recentSwingLow();
 
-		if (rr < 2.0) {
-			// If R:R is less than 1:2, do not allow confidence to exceed 0.7
-			if (confidence > 0.7) {
-				log.debug("Capping confidence to 0.70 because R:R < 1:2");
-				confidence = 0.7;
-			}
-		} else {
-			// Reward good R:R with a small bonus (max +0.10)
-			double bonus = Math.min(0.10, (rr - 2.0) * 0.02);
-			if (bonus > 0) {
-				confidence = Math.min(1.0, confidence + bonus);
-				log.debug("R:R bonus applied: +{}", String.format("%.2f", bonus));
-			}
-		}
+	    if ((momentumSell || structureBreak)
+	            && ctx.trend().getDirection() != TrendDirection.UP) {
 
-		confidence = Math.min(1.0, Math.max(0.0, confidence));
-		log.info("Confidence calculation: {} (trend-aligned: {}, relevant-patterns: {}, strong-pattern: {}, R:R: {})",
-				String.format("%.2f", confidence), trendAligned, relevantPatterns, hasStrongPattern, String.format("%.2f", rr));
-		return Math.round(confidence * 100.0) / 100.0;
+	        if (ctx.nearSupport()) {
+	            log.info("Protective exit suppressed: price near support — potential bounce; continuing to candidate evaluation");
+	        } else {
+	            String reason = momentumSell
+	                    ? "EMA momentum cross (EMA9<EMA21 + below EMA50)"
+	                    : "Bearish structure break below recent swing low";
+
+	            log.info("SELL signal (protective exit): {}", reason);
+	            return new SignalResult(Signal.SELL, MIN_SCORE, 1.0);
+	        }
+	    }
+
+	    // ----------------------------------------------------------------
+	    // 2. CANDIDATE BUILDING
+	    // ----------------------------------------------------------------
+	    boolean longCandidate = ctx.trend().getDirection() == TrendDirection.UP
+	            && ctx.bullishLocation()
+	            && !ctx.nearResistance()
+	            && ctx.htfBullish();
+
+	    boolean shortCandidate = ctx.trend().getDirection() == TrendDirection.DOWN
+	            && ctx.bearishLocation()
+	            && !ctx.nearSupport()
+	            && ctx.htfBearish();
+
+	    log.info("--- Step 2: Candidates — long={} | short={} ---", longCandidate, shortCandidate);
+
+	    // ----------------------------------------------------------------
+	    // 3. RISK:REWARD WITH BUFFERS (realistic)
+	    // ----------------------------------------------------------------
+	    double longRR = 1.0;
+	    double shortRR = 1.0;
+
+	    double atr = ctx.atr();
+	    double buffer = atr * ATR_BUFFER_MULTIPLIER;
+
+	    if (longCandidate && ctx.nearestSupport() != null && ctx.nearestResistance() != null) {
+
+	        double risk = price - (ctx.nearestSupport() - buffer);
+	        double reward = (ctx.nearestResistance() - buffer) - price;
+
+	        if (risk > 0 && reward > 0) {
+	            longRR = reward / risk;
+	        } else {
+	            log.info("Long R:R degenerate (reward={}) — buffer={} consumed target margin; candidate rejected",
+	                    String.format("%.4f", reward), String.format("%.4f", buffer));
+	            longCandidate = false;
+	        }
+
+	        if (longCandidate && longRR < MIN_RR) {
+	            log.info("Long rejected: R:R {} < {}", String.format("%.2f", longRR), MIN_RR);
+	            longCandidate = false;
+	        }
+	    }
+
+	    if (shortCandidate && ctx.nearestSupport() != null && ctx.nearestResistance() != null) {
+
+	        double risk = (ctx.nearestResistance() + buffer) - price;
+	        double reward = price - (ctx.nearestSupport() + buffer);
+
+	        if (risk > 0 && reward > 0) {
+	            shortRR = reward / risk;
+	        } else {
+	            log.info("Short R:R degenerate (reward={}) — buffer={} consumed target margin; candidate rejected",
+	                    String.format("%.4f", reward), String.format("%.4f", buffer));
+	            shortCandidate = false;
+	        }
+
+	        if (shortCandidate && shortRR < MIN_RR) {
+	            log.info("Short rejected: R:R {} < {}", String.format("%.2f", shortRR), MIN_RR);
+	            shortCandidate = false;
+	        }
+	    }
+
+	    log.info("--- Step 3: R:R — long={} | short={} ---",
+	            String.format("%.2f", longRR), String.format("%.2f", shortRR));
+
+	    // ----------------------------------------------------------------
+	    // 4. ATR VOLATILITY FILTER
+	    // ----------------------------------------------------------------
+	    if (ctx.atrSpike()) {
+	        boolean breakout =
+	                (ctx.nearestResistance() != null && price > ctx.nearestResistance()) ||
+	                (ctx.nearestSupport() != null && price < ctx.nearestSupport());
+
+	        if (!breakout) {
+	            log.info("ATR spike without breakout — blocking trades");
+	            longCandidate = false;
+	            shortCandidate = false;
+	        } else {
+	            log.info("ATR spike + breakout — allowed");
+	        }
+	    }
+
+	    // ----------------------------------------------------------------
+	    // 5. SCORING SYSTEM
+	    // ----------------------------------------------------------------
+	    int longScore = 0;
+	    int shortScore = 0;
+
+	    // Trend strength
+	    if (ctx.trend().getStrength() > STRONG_TREND_THRESHOLD) {
+	        longScore += 2;
+	        shortScore += 2;
+	    }
+
+	    // Pattern scoring (context-aware: half credit when trend does not align)
+	    if (ctx.trend().getDirection() == TrendDirection.UP) {
+	        longScore += (int) Math.min(bullishCount, 3);
+	    } else {
+	        longScore += (int) Math.min(bullishCount, 3) / 2;
+	    }
+
+	    if (ctx.trend().getDirection() == TrendDirection.DOWN) {
+	        shortScore += (int) Math.min(bearishCount, 3);
+	    } else {
+	        shortScore += (int) Math.min(bearishCount, 3) / 2;
+	    }
+
+	    // Location
+	    if (ctx.nearSupport()) longScore += 2;
+	    if (ctx.nearResistance()) shortScore += 2;
+
+	    // EMA alignment (with neutrality)
+	    double emaDistance = Math.abs(ctx.distanceFromEma50Pct());
+	    if (emaDistance > EMA_NEUTRAL_THRESHOLD) {
+	        if (ctx.isAboveEMA()) longScore += 1;
+	        else shortScore += 1;
+	    }
+
+	    // HTF bonus
+	    if (ctx.htfBullish() && ctx.mtfResult() != null) longScore += 2;
+	    if (ctx.htfBearish() && ctx.mtfResult() != null) shortScore += 2;
+
+	    // R:R bonus
+	    if (longRR > 3.0) longScore += 2;
+	    else if (longRR > 2.0) longScore += 1;
+
+	    if (shortRR > 3.0) shortScore += 2;
+	    else if (shortRR > 2.0) shortScore += 1;
+
+	    // Zero scores if candidate invalid
+	    if (!longCandidate) longScore = 0;
+	    if (!shortCandidate) shortScore = 0;
+
+	    log.info("--- Step 5: Scores — long={} | short={} ---", longScore, shortScore);
+
+	    // ----------------------------------------------------------------
+	    // 6. FINAL DECISION
+	    // ----------------------------------------------------------------
+	    // Note: longCandidate (requires trend==UP) and shortCandidate (requires trend==DOWN)
+	    // are mutually exclusive by construction — no conflict resolution needed.
+	    if (longCandidate && longScore >= MIN_SCORE) {
+	        log.info("BUY: score={} R:R={}", longScore, String.format("%.2f", longRR));
+	        return new SignalResult(Signal.BUY, longScore, longRR);
+	    }
+
+	    if (shortCandidate && shortScore >= MIN_SCORE) {
+	        log.info("SELL: score={} R:R={}", shortScore, String.format("%.2f", shortRR));
+	        return new SignalResult(Signal.SELL, shortScore, shortRR);
+	    }
+
+	    log.info("HOLD: no valid trade (long={}, short={})", longCandidate, shortCandidate);
+	    return new SignalResult(Signal.HOLD, 0, 1.0);
+	}
+	// -----------------------------------------------------------------------
+	// Confidence normalisation: 0.30 at MIN_SCORE, scales linearly to 1.0
+	// -----------------------------------------------------------------------
+
+	private double normalizeScore(Signal signal, int score) {
+		if (signal == Signal.HOLD) return 0.0;
+		double normalized = 0.3 + Math.max(0, score - MIN_SCORE) * (0.7 / (MAX_SCORE_NORM - MIN_SCORE));
+		return Math.round(Math.min(1.0, normalized) * 100.0) / 100.0;
 	}
 
-	// New helper to compute reward/risk ratio. For BUY: reward = resistance - price, risk = price - support.
-	// For SELL: reward = price - support, risk = resistance - price.
-	private double calculateRiskRewardRatio(Signal signal, double currentPrice,
-			Double nearestSupport, Double nearestResistance) {
-		if (signal == Signal.HOLD) {
-			return 1.0;
-		}
-
-		try {
-			if (signal == Signal.BUY) {
-				if (nearestSupport == null || nearestResistance == null) {
-					return 1.0;
-				}
-				double risk = currentPrice - nearestSupport;
-				double reward = nearestResistance - currentPrice;
-				if (risk <= 0 || reward <= 0) {
-					return 1.0;
-				}
-				return reward / risk;
-			}
-
-			if (signal == Signal.SELL) {
-				if (nearestSupport == null || nearestResistance == null) {
-					return 1.0;
-				}
-				double risk = nearestResistance - currentPrice;
-				double reward = currentPrice - nearestSupport;
-				if (risk <= 0 || reward <= 0) {
-					return 1.0;
-				}
-				return reward / risk;
-			}
-		} catch (Exception e) {
-			log.debug("Error calculating R:R: {}", e.getMessage());
-		}
-		return 1.0;
-	}
+	// -----------------------------------------------------------------------
+	// Reasoning builder (format preserved for test expectations)
+	// -----------------------------------------------------------------------
 
 	private String buildReasoning(Signal signal, TrendResult trend,
 			List<DetectedPattern> patterns, double currentPrice,
@@ -525,13 +537,8 @@ public class PriceActionStrategy implements TradingStrategy {
 			sb.append("No significant patterns detected. ");
 		}
 
-		if (nearestSupport != null) {
-			sb.append(String.format("Support: %.2f. ", nearestSupport));
-		}
-		if (nearestResistance != null) {
-			sb.append(String.format("Resistance: %.2f. ", nearestResistance));
-		}
-
+		if (nearestSupport    != null) sb.append(String.format("Support: %.2f. ",    nearestSupport));
+		if (nearestResistance != null) sb.append(String.format("Resistance: %.2f. ", nearestResistance));
 		sb.append(String.format("Price: %.2f.", currentPrice));
 		return sb.toString();
 	}
