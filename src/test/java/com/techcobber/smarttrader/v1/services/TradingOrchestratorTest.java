@@ -5,6 +5,7 @@ import com.techcobber.smarttrader.v1.models.Order;
 import com.techcobber.smarttrader.v1.models.TradeDecision;
 import com.techcobber.smarttrader.v1.models.TradeDecision.Signal;
 import com.techcobber.smarttrader.v1.models.UserPreferences;
+import com.techcobber.smarttrader.v1.strategy.RiskManager;
 import com.techcobber.smarttrader.v1.strategy.RiskManager.RiskAssessment;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,7 +27,7 @@ class TradingOrchestratorTest {
 
     @BeforeEach
     void setUp() {
-        orchestrator = new TradingOrchestrator();
+        orchestrator = new TradingOrchestrator(new RiskManager());
     }
 
     // -----------------------------------------------------------------------
@@ -48,28 +49,40 @@ class TradingOrchestratorTest {
     }
 
     /**
-     * Creates 28 candles: a gentle uptrend followed by a pullback to near EMA50,
-     * then a bullish bounce — satisfying the location filter for BUY.
+     * Creates 28 candles: staircase uptrend with two clear higher-highs (112.0→116.5)
+     * and higher-lows (107.6→108.0) in the analysis window → UP trend. Satisfies all
+     * BUY entry guards: EMA pullback, resistance gap, and bullish pattern count.
      */
     private static List<MyCandle> bullishUptrendCandles() {
         List<MyCandle> candles = new ArrayList<>();
-        for (int i = 0; i < 20; i++) {
-            double base  = 100.0 + i * 0.25;
-            double wave  = 0.5 * Math.sin(i * 0.8);
-            double open  = base + wave;
-            double close = open + 0.2 + (i % 3 == 0 ? -0.1 : 0.1);
-            double high  = Math.max(open, close) + 0.4;
-            double low   = Math.min(open, close) - 0.4;
-            candles.add(candle(open, close, high, low, i));
-        }
-        for (int i = 20; i < 25; i++) {
-            double base  = 105.0 - (i - 20) * 0.6;
-            candles.add(candle(base + 0.1, base - 0.1, base + 0.5, base - 0.5, i));
-        }
-        double s = 102.0;
-        candles.add(candle(s + 0.5, s - 0.3, s + 0.8, s - 0.5, 25));
-        candles.add(candle(s - 0.3, s + 1.0, s + 1.2, s - 0.5, 26));
-        candles.add(candle(s + 1.0, s + 2.5, s + 2.6, s + 0.9, 27));
+        candles.add(candle(99.7,  100.3, 100.7, 99.3,  0));
+        candles.add(candle(100.3, 101.1, 101.5, 99.9,  1));
+        candles.add(candle(101.1, 102.2, 102.6, 100.7, 2));
+        candles.add(candle(102.2, 103.5, 103.9, 101.8, 3));
+        candles.add(candle(103.5, 105.0, 105.5, 103.1, 4));
+        candles.add(candle(105.0, 104.0, 105.4, 103.6, 5));
+        candles.add(candle(104.0, 103.0, 104.4, 102.6, 6));
+        candles.add(candle(103.2, 104.5, 104.9, 102.8, 7));
+        candles.add(candle(104.5, 106.0, 106.4, 104.1, 8));
+        candles.add(candle(106.0, 107.5, 107.9, 105.6, 9));
+        candles.add(candle(107.5, 109.0, 109.4, 107.1, 10));
+        candles.add(candle(109.0, 110.3, 110.7, 108.6, 11));
+        candles.add(candle(110.3, 111.5, 112.0, 109.9, 12)); // swing high 112.0
+        candles.add(candle(111.5, 110.0, 111.9, 109.6, 13));
+        candles.add(candle(110.0, 108.0, 110.4, 107.6, 14)); // swing low 107.6
+        candles.add(candle(108.2, 109.5, 109.9, 107.8, 15));
+        candles.add(candle(109.5, 111.0, 111.4, 109.1, 16));
+        candles.add(candle(111.0, 112.5, 112.9, 110.6, 17));
+        candles.add(candle(112.5, 114.0, 114.4, 112.1, 18));
+        candles.add(candle(114.0, 115.5, 115.9, 113.6, 19));
+        candles.add(candle(116.0, 115.0, 116.5, 114.6, 20)); // Phase 2 swing high 116.5
+        candles.add(candle(115.0, 113.8, 115.4, 113.4, 21));
+        candles.add(candle(113.8, 112.5, 114.2, 112.1, 22));
+        candles.add(candle(112.5, 111.2, 112.9, 110.8, 23));
+        candles.add(candle(111.2, 110.0, 111.6, 109.6, 24));
+        candles.add(candle(110.5, 109.2, 111.0, 108.0, 25)); // swing low 108.0
+        candles.add(candle(109.1, 110.8, 111.2, 108.4, 26)); // bullish engulfing
+        candles.add(candle(109.0, 109.5, 111.5, 108.5, 27)); // final close=109.5
         return candles;
     }
 

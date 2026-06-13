@@ -48,6 +48,10 @@ public class OrderHelper {
 		order.setQuoteSize(request.getQuoteSize());
 		order.setDecisionFactors(request.getDecisionFactors());
 		order.setComments(request.getComments());
+		// Persist risk management fields so exit evaluation can use them later
+		order.setStopLoss(request.getStopLoss());
+		order.setTakeProfit(request.getTakeProfit());
+		order.setEntryPriceNum(request.getEntryPriceNum());
 		order.setCreatedAt(LocalDateTime.now());
 		order.setUpdatedAt(LocalDateTime.now());
 		

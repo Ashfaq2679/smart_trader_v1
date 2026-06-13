@@ -17,13 +17,18 @@ import com.techcobber.smarttrader.v1.strategy.PriceActionStrategy;
 import com.techcobber.smarttrader.v1.strategy.RiskManager;
 import com.techcobber.smarttrader.v1.strategy.RiskManager.RiskAssessment;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class TradingOrchestrator {
 
 	private static final double MIN_CONFIDENCE = 0.65;
+
+	/** Injected singleton — no need to create a new instance per call. */
+	private final RiskManager riskManager;
 
 	private final EmaIndicator emaIndicator = new EmaIndicator();
 	private final AtrIndicator atrIndicator = new AtrIndicator();
@@ -79,10 +84,10 @@ public class TradingOrchestrator {
 					decision.getConfidence(), minScore);
 
 			double currentPrice = candles.get(candles.size() - 1).getClose();
-			RiskManager riskManager = new RiskManager();
-			// Pass locationOK from decision: price near EMA50 or support
+				// locationOK: price must be near EMA50 pullback or support AND not already crowding resistance
 			boolean locationOK = decision.getDistanceFromEma50Pct() != null
-					&& decision.getDistanceFromEma50Pct() <= 3.0;
+						&& decision.getDistanceFromEma50Pct() <= 3.0
+						&& !Boolean.TRUE.equals(decision.getNearResistanceDetected());
 			boolean htfAligned = decision.getHtfTrendDirection() == null
 					|| !"DOWN".equals(decision.getHtfTrendDirection());
 

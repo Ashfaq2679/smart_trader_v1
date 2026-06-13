@@ -54,6 +54,13 @@ public class UserPreferences {
 	private String minEntryScore;
 
 	/**
+	 * Maximum % below nearest resistance a price may be and still qualify as a valid BUY entry.
+	 * If the gap between price and resistance is ≤ this threshold the entry is rejected — there
+	 * is not enough room to run before hitting the resistance wall. Default "2.0" (2 %).
+	 */
+	private String resistanceProximityPct;
+
+	/**
 	 * Minimum actual reward as a percentage of entry price that a BUY must offer
 	 * after the take-profit is capped at resistance. Filters out tight-spread trades
 	 * where fees and slippage would eliminate any edge. Default "2.0" (2 %).

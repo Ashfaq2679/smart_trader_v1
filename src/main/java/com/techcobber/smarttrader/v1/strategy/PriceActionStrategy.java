@@ -27,9 +27,11 @@ public class PriceActionStrategy implements TradingStrategy {
 	private static final int TREND_LOOKBACK = 20;
 
 	// Default entry filter thresholds (overridden by UserPreferences when available)
-	private static final double DEFAULT_EMA50_THRESHOLD_PCT   = 3.0;
-	private static final double DEFAULT_SUPPORT_PROXIMITY_PCT = 2.0;
-	private static final double DEFAULT_ATR_SPIKE_MULTIPLIER  = 2.0;
+	private static final double DEFAULT_EMA50_THRESHOLD_PCT       = 3.0;
+	private static final double DEFAULT_SUPPORT_PROXIMITY_PCT     = 2.0;
+	/** Price must be at least this far below resistance to enter a BUY. Default 2 %. */
+	private static final double DEFAULT_RESISTANCE_PROXIMITY_PCT  = 2.0;
+	private static final double DEFAULT_ATR_SPIKE_MULTIPLIER      = 2.0;
 
 	private final SupportResistanceDetector srDetector       = new SupportResistanceDetector();
 	private final TrendAnalyzer             trendAnalyzer     = new TrendAnalyzer();
@@ -53,7 +55,7 @@ public class PriceActionStrategy implements TradingStrategy {
 	 *
 	 * @param candles     1H candles (entry timeframe)
 	 * @param productId   trading pair identifier
-	 * @param mtfResult   optional MTF alignment result; when provided, BUY is blocked if HTF is DOWN
+	 * @param mtfResult   optional MTF alignment result; BUY blocked if HTF is DOWN, SELL blocked if HTF is UP
 	 * @param prefs       optional user preferences for threshold overrides; {@code null} uses defaults
 	 */
 	public TradeDecision analyze(List<MyCandle> candles, String productId,
@@ -195,29 +197,48 @@ public class PriceActionStrategy implements TradingStrategy {
 		log.info("Pattern bias breakdown — Bullish: {}, Bearish: {}, Neutral: {}",
 				bullishPatterns, bearishPatterns, neutralPatterns);
 
-		// Step 4: Location filter (BUY-side only)
-		double ema50ThresholdPct   = parseDoubleOrDefault(prefs != null ? prefs.getEma50ThresholdPct() : null, DEFAULT_EMA50_THRESHOLD_PCT);
-		double supportProximityPct = parseDoubleOrDefault(prefs != null ? prefs.getSupportProximityPct() : null, DEFAULT_SUPPORT_PROXIMITY_PCT);
+		// Step 4: Location filter — direction-aware EMA and proximity checks
+		double ema50ThresholdPct       = parseDoubleOrDefault(prefs != null ? prefs.getEma50ThresholdPct() : null, DEFAULT_EMA50_THRESHOLD_PCT);
+		double supportProximityPct     = parseDoubleOrDefault(prefs != null ? prefs.getSupportProximityPct() : null, DEFAULT_SUPPORT_PROXIMITY_PCT);
+		double resistanceProximityPct  = parseDoubleOrDefault(prefs != null ? prefs.getResistanceProximityPct() : null, DEFAULT_RESISTANCE_PROXIMITY_PCT);
 
-		boolean onEMAPullback  = distanceFromEma50Pct <= ema50ThresholdPct;
+		// Direction-aware EMA proximity (prevents conflating pullback with breakdown)
+		boolean isAboveEMA        = currentPrice >= ema50;
+		// BUY: price above EMA and within threshold → healthy pullback, not extended
+		boolean onBullishPullback = isAboveEMA && distanceFromEma50Pct <= ema50ThresholdPct;
+		// SELL: price is not more than threshold% below EMA → reject/breakdown, not extended short
+		boolean onEMAReject       = distanceFromEma50Pct >= -ema50ThresholdPct;
+
 		boolean nearSupport    = nearestSupport != null
 				&& ((currentPrice - nearestSupport) / currentPrice * 100.0) <= supportProximityPct;
-		boolean locationOK = onEMAPullback || nearSupport;
+		// Shared resistance proximity (reused for both BUY guard and SELL entry)
+		boolean nearResistance = nearestResistance != null
+				&& ((nearestResistance - currentPrice) / currentPrice * 100.0) <= resistanceProximityPct;
 
-		log.info("Location filter — EMA50 distance={}% (threshold={}%) | nearSupport={} | locationOK={}",
-				String.format("%.2f", distanceFromEma50Pct), ema50ThresholdPct, nearSupport, locationOK);
+		// BUY: must be in a bullish pullback or near support, and NOT already crowding resistance
+		boolean buyLocationOK  = (onBullishPullback || nearSupport) && !nearResistance;
+		// SELL: price is rejecting from/near EMA, or already near resistance (high R:R for short)
+		boolean sellLocationOK = onEMAReject || nearResistance;
 
-		// --- Pre-flight: HTF BUY block ---
-		boolean htfBlocksBuy = mtfResult != null && mtfResult.getHtfTrend() == TrendDirection.DOWN;
-		if (htfBlocksBuy) {
-			log.info("HTF(1D) is DOWN — BUY signals suppressed for this product");
-		}
+		log.info("Location filter — EMA50 dist={}% (thr={}%) | isAboveEMA={} | onBullishPullback={} | onEMAReject={} | nearSupport={} | nearResistance={} (gap={}%, thr={}%) | buyLocationOK={} | sellLocationOK={}",
+				String.format("%.2f", distanceFromEma50Pct), ema50ThresholdPct,
+				isAboveEMA, onBullishPullback, onEMAReject, nearSupport,
+				nearResistance,
+				nearestResistance != null ? String.format("%.2f", (nearestResistance - currentPrice) / currentPrice * 100.0) : "N/A",
+				resistanceProximityPct, buyLocationOK, sellLocationOK);
+
+		// --- Pre-flight: HTF alignment gates ---
+		boolean htfBlocksBuy  = mtfResult != null && mtfResult.getHtfTrend() == TrendDirection.DOWN;
+		boolean htfBlocksSell = mtfResult != null && mtfResult.getHtfTrend() == TrendDirection.UP;
+		if (htfBlocksBuy)  log.info("HTF(1D) is DOWN — BUY signals suppressed for this product");
+		if (htfBlocksSell) log.info("HTF(1D) is UP — SELL signals suppressed for this product");
 
 		// Step 5: Signal determination
 		log.info("--- Step 5: Signal Determination ---");
 		Signal signal = determineSignal(trend, detectedPatterns, currentPrice,
 				nearestSupport, nearestResistance, levels,
-				locationOK, htfBlocksBuy, candles, ema50);
+				buyLocationOK, sellLocationOK, htfBlocksBuy, htfBlocksSell,
+				candles, ema50);
 
 		// Step 6: Confidence calculation
 		double confidence = calculateConfidence(signal, trend, detectedPatterns,
@@ -242,6 +263,7 @@ public class PriceActionStrategy implements TradingStrategy {
 				.atr(atr)
 				.distanceFromEma50Pct(Math.round(distanceFromEma50Pct * 100.0) / 100.0)
 				.consolidationDetected(false)
+				.nearResistanceDetected(nearResistance)
 				.htfTrendDirection(mtfResult != null ? mtfResult.getHtfTrend().name() : null)
 				.confirmTrendDirection(mtfResult != null ? mtfResult.getConfirmTrend().name() : null)
 				.entryScore(confidence)
@@ -251,7 +273,8 @@ public class PriceActionStrategy implements TradingStrategy {
 
 	private Signal determineSignal(TrendResult trend, List<DetectedPattern> patterns,
 			double currentPrice, Double nearestSupport, Double nearestResistance,
-			List<Level> allLevels, boolean locationOK, boolean htfBlocksBuy,
+			List<Level> allLevels, boolean buyLocationOK, boolean sellLocationOK,
+			boolean htfBlocksBuy, boolean htfBlocksSell,
 			List<MyCandle> candles, double ema50) {
 
 		long bullishCount = patterns.stream().filter(p -> p.getBias() == PatternBias.BULLISH).count();
@@ -278,38 +301,44 @@ public class PriceActionStrategy implements TradingStrategy {
 			return Signal.SELL;
 		}
 
-		// Classic SELL patterns
-		boolean breakdownBelow = false;
-		if (nearestSupport != null) {
-			double supportTolerance = nearestSupport * 0.002;
-			breakdownBelow = currentPrice < nearestSupport - supportTolerance;
-			if (breakdownBelow) {
-				log.info("Breakdown detected: price {} below support {}", String.format("%.2f", currentPrice), String.format("%.2f", nearestSupport));
+		// Classic SELL patterns — gated by location and HTF alignment
+		if (htfBlocksSell) {
+			log.info("SELL blocked: HTF(1D) trend is UP");
+		} else if (!sellLocationOK) {
+			log.info("SELL blocked: location filter not met (price extended below EMA, not near resistance)");
+		} else {
+			boolean breakdownBelow = false;
+			if (nearestSupport != null) {
+				double supportTolerance = nearestSupport * 0.002;
+				breakdownBelow = currentPrice < nearestSupport - supportTolerance;
+				if (breakdownBelow) {
+					log.info("Breakdown detected: price {} below support {}", String.format("%.2f", currentPrice), String.format("%.2f", nearestSupport));
+				}
 			}
-		}
 
-		boolean rejectedAtResistance = false;
-		if (nearestResistance != null) {
-			double proximity = Math.abs(currentPrice - nearestResistance) / nearestResistance;
-			rejectedAtResistance = proximity < 0.005 && bearishCount > 0;
-			if (rejectedAtResistance) {
-				log.info("Rejection at resistance {} with bearish patterns", String.format("%.2f", nearestResistance));
+			boolean rejectedAtResistance = false;
+			if (nearestResistance != null) {
+				double proximity = Math.abs(currentPrice - nearestResistance) / nearestResistance;
+				rejectedAtResistance = proximity < 0.005 && bearishCount > 0;
+				if (rejectedAtResistance) {
+					log.info("Rejection at resistance {} with bearish patterns", String.format("%.2f", nearestResistance));
+				}
 			}
-		}
 
-		if (breakdownBelow && trend.getDirection() == TrendDirection.DOWN && bearishCount > 0) {
-			log.info("SELL signal: breakdown below support in downtrend with bearish patterns");
-			return Signal.SELL;
-		}
+			if (breakdownBelow && trend.getDirection() == TrendDirection.DOWN && bearishCount > 0) {
+				log.info("SELL signal: breakdown below support in downtrend with bearish patterns");
+				return Signal.SELL;
+			}
 
-		if (rejectedAtResistance && trend.getDirection() != TrendDirection.UP) {
-			log.info("SELL signal: rejection at resistance with bearish patterns and non-bullish trend");
-			return Signal.SELL;
-		}
+			if (rejectedAtResistance && trend.getDirection() != TrendDirection.UP) {
+				log.info("SELL signal: rejection at resistance with bearish patterns and non-bullish trend");
+				return Signal.SELL;
+			}
 
-		if (bearishCount >= 2 && trend.getDirection() == TrendDirection.DOWN) {
-			log.info("SELL signal: multiple bearish patterns ({}) aligned with downtrend", bearishCount);
-			return Signal.SELL;
+			if (bearishCount >= 2 && trend.getDirection() == TrendDirection.DOWN) {
+				log.info("SELL signal: multiple bearish patterns ({}) aligned with downtrend", bearishCount);
+				return Signal.SELL;
+			}
 		}
 
 		// ----------------------------------------------------------------
@@ -321,8 +350,8 @@ public class PriceActionStrategy implements TradingStrategy {
 			return Signal.HOLD;
 		}
 
-		if (!locationOK) {
-			log.info("BUY blocked: location filter — price not near EMA50 pullback or support");
+		if (!buyLocationOK) {
+			log.info("BUY blocked: location filter not met (see location filter log above for details)");
 			return Signal.HOLD;
 		}
 

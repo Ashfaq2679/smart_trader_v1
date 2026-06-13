@@ -9,6 +9,7 @@ import com.techcobber.smarttrader.v1.models.UserPreferences;
 
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 /**
  * Assesses risk and computes position sizing, stop-loss, take-profit, trailing stop,
@@ -50,13 +51,14 @@ import lombok.extern.slf4j.Slf4j;
  * </ul>
  */
 @Slf4j
+@Component
 public class RiskManager {
 
 	private static final double DEFAULT_RISK_REWARD_RATIO       = 2.0;
 	private static final double DEFAULT_STOP_LOSS_PERCENT       = 0.02;
 	private static final double DEFAULT_ATR_MULTIPLIER          = 1.5;
 	private static final double DEFAULT_TRAILING_ATR_MULTIPLIER = 2.0;
-	private static final double DEFAULT_MIN_ENTRY_SCORE         = 0.65;
+	private static final double DEFAULT_MIN_ENTRY_SCORE         = 0.70;
 	/** Minimum actual reward (as % of entry) after resistance cap. Blocks tight-spread trades. */
 	private static final double DEFAULT_MIN_REWARD_PCT          = 2.0;
 	private static final double SWING_LOW_BUFFER                = 0.005;  // 0.5 % below swing low

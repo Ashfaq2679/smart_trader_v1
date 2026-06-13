@@ -56,6 +56,9 @@ public class TradeDecision {
 	/** Whether consolidation was detected and blocked entry. */
 	private Boolean consolidationDetected;
 
+	/** Whether the price was too close to resistance to permit a BUY entry. */
+	private Boolean nearResistanceDetected;
+
 	/** Composite entry score (confidence) at the time of signal generation. */
 	private Double entryScore;
 

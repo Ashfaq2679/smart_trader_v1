@@ -17,14 +17,18 @@ import com.techcobber.smarttrader.v1.models.MyCandle;
 import com.techcobber.smarttrader.v1.models.OrderRequest;
 import com.techcobber.smarttrader.v1.models.OrderResponse;
 import com.techcobber.smarttrader.v1.models.TradeDecision;
+import com.techcobber.smarttrader.v1.models.TradeDecision.Signal;
+import com.techcobber.smarttrader.v1.models.UserPreferences;
 import com.techcobber.smarttrader.v1.repositories.CoinsRepository;
+import com.techcobber.smarttrader.v1.repositories.UserPreferencesRepository;
 import com.techcobber.smarttrader.v1.services.CoinbaseClientFactory;
 import com.techcobber.smarttrader.v1.services.CoinbasePublicServiceImpl;
 import com.techcobber.smarttrader.v1.services.MarketScannerService;
 import com.techcobber.smarttrader.v1.services.OrderService;
 import com.techcobber.smarttrader.v1.services.TradeDecisionService;
 import com.techcobber.smarttrader.v1.services.TradingOrchestrator;
-import com.techcobber.smarttrader.v1.strategy.PatternUtils;
+import com.techcobber.smarttrader.v1.services.UserService;
+import com.techcobber.smarttrader.v1.strategy.RiskManager.RiskAssessment;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.RequiredArgsConstructor;
@@ -58,7 +62,6 @@ public class MarketScanScheduler {
 	private List<String> ignoreProductIds;
 	static final int DEFAULT_LIMIT = 10;
 	private static final int CANDLE_COUNT = 100;
-	private static final Double BASE_SIZE = 25.0;
 
 	private final CoinbaseClientFactory coinbaseClientFactory;
 	private final CircuitBreakerRegistry circuitBreakerRegistry;
@@ -68,6 +71,8 @@ public class MarketScanScheduler {
 	private final CoinsRepository coinsRepository;
 	private final TradeDecisionService tradeDecisionService; // optional, may be null
 	private final OrderService orderService;
+	private final UserPreferencesRepository userPreferencesRepository;
+	private final UserService userService;
 
 	/**
 	 * Scheduled task — runs every hour (3 600 000 ms). The initial delay allows the
@@ -150,38 +155,68 @@ public class MarketScanScheduler {
 	public void scheduledCandleFetch() {
 		log.info("Scheduled candle fetch starting…");
 		List<String> productIds = coinsRepository.findAll().stream()
-				.filter(coin -> coin.productId() != null && !ignoreProductIds.contains(coin.productId()))
+				.filter(coin -> coin.productId() != null
+						&& (ignoreProductIds == null || !ignoreProductIds.contains(coin.productId())))
 				.map(coin -> coin.productId()).toList();
 		try {
 			productIds.forEach(pId -> {
 				List<MyCandle> candles = fetchCandlesForProduct(pId);
-				TradeDecision decision = tradingOrchestrator.executeAnalysis(candles, pId);
-				log.info("Scheduled candle fetch completed for {}. Trade decision: {}", pId, decision);
-				// Persist decision when confidence > 0.70 and a strong pattern exists
-				if (decision != null) {
-					boolean hasStrongPattern = false;
-					if (decision.getDetectedPatterns() != null) {
-						hasStrongPattern = PatternUtils.hasStrongPatternByNames(decision.getDetectedPatterns());
-					}
-					if (decision.getConfidence() > 0.70 && hasStrongPattern) {
-						try {
-							tradeDecisionService.save(decision);
-							OrderRequest request = OrderRequest.builder()
-									.productId(pId)
-									.side(decision.getSignal().name())
-									.orderType("LIMIT")
-									.baseSize(BASE_SIZE) // Example fixed size; in real use this would be dynamic
-									.limitPrice(decision.getSuggestedPrice())
-									.comments("Auto-generated order based on market scan")
-									.build();
-							OrderResponse response = orderService.placeOrder(defaultUserId, request);
-							log.info("Persisted TradeDecision for {} (confidence: {}) for ", pId, decision.getConfidence(), response.getProductId());
-						} catch (Exception e) {
-							log.warn("Failed to persist TradeDecision for {}: {}", pId, e.getMessage());
-						}
-					}
+
+				// Resolve user preferences and account balance for risk-aware analysis.
+				UserPreferences prefs = userPreferencesRepository
+						.findByUserId(defaultUserId).orElse(null);
+				double balance = 0.0;
+				try {
+					balance = userService.findByUserName(defaultUserId).getCurrentFunds();
+				} catch (Exception ex) {
+					log.warn("Could not fetch account balance for {}: {}", defaultUserId, ex.getMessage());
 				}
 
+				// Full risk-gated analysis: replaces bare executeAnalysis() so that
+				// location filter, ATR spike guard, consolidation check, and R:R gate
+				// all fire before any order is placed.
+				java.util.Map<String, Object> result =
+						tradingOrchestrator.executeWithRisk(candles, pId, prefs, balance);
+
+				TradeDecision decision = (TradeDecision) result.get("decision");
+				RiskAssessment risk    = (RiskAssessment) result.get("riskAssessment");
+
+				log.info("Scheduled candle fetch completed for {}. Signal: {} | RiskApproved: {}",
+						pId, decision != null ? decision.getSignal() : "N/A",
+						risk != null ? risk.isApproved() : "not assessed");
+
+				// Only place an order when the risk manager has explicitly approved it.
+				// This ensures confidence, location, R:R, and HTF alignment were all met.
+				if (decision != null && risk != null && risk.isApproved()
+						&& decision.getSignal() == Signal.BUY) {
+					try {
+						tradeDecisionService.save(decision);
+						OrderRequest orderRequest = OrderRequest.builder()
+								.productId(pId)
+								.side(decision.getSignal().name())
+								.orderType("LIMIT")
+								.baseSize(risk.getPositionSize())
+								.limitPrice(decision.getSuggestedPrice())
+								.stopLoss(risk.getStopLoss())
+								.takeProfit(risk.getTakeProfit())
+								.entryPriceNum(decision.getSuggestedPrice())
+								.comments(String.format(
+										"Auto-generated BUY — confidence=%.2f R:R=%.2f SL=%.4f TP=%.4f",
+										decision.getConfidence(), risk.getRiskRewardRatio(),
+										risk.getStopLoss(), risk.getTakeProfit()))
+								.build();
+						OrderResponse response = orderService.placeOrder(defaultUserId, orderRequest);
+						log.info("Order placed for {} — success={} coinbaseId={}",
+								pId, response.isSuccess(), response.getCoinbaseOrderId());
+					} catch (Exception e) {
+						log.warn("Failed to place order for {}: {}", pId, e.getMessage());
+					}
+				} else if (decision != null && risk != null && !risk.isApproved()) {
+					log.info("Trade decision for {} NOT approved by risk manager — skipping order placement. " +
+							"Confidence: {}, R:R: {}, SL: {}, TP: {}",
+							pId, decision.getConfidence(), risk.getRiskRewardRatio(),
+							risk.getStopLoss(), risk.getTakeProfit());
+				}
 			});
 
 		} catch (Exception e) {
