@@ -313,14 +313,14 @@ class MarketScannerServiceTest {
 	class ScanUSDCPairsTests {
 
 		@Test
-		@DisplayName("Delegates to scanPairs with USDC and ONE_HOUR")
+		@DisplayName("Delegates to scanPairs with USDC and FIFTEEN_MINUTE")
 		void delegatesToScanPairs() throws CoinbaseAdvancedException {
 			Product product = createActiveProduct("BTC-USDC", "50000", "10", "3", "65000");
 
 			doReturn(buildResponse(List.of(product))).when(publicServiceSpy).listPublicProducts();
 			doReturn(wrapCandles(uptrendCandles()))
 					.when(publicServiceSpy).fetchCandles(eq("BTC-USDC"), anyLong(), anyLong(),
-							eq(Granularity.ONE_HOUR));
+							eq(Granularity.FIFTEEN_MINUTE));
 
 			List<CoinScanResult> results = scanner.scanUSDCPairs(5);
 

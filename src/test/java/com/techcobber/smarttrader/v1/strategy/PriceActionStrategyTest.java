@@ -37,58 +37,61 @@ class PriceActionStrategyTest {
     }
 
     /**
-     * Creates 28 candles with a two-step staircase uptrend + pullback + bullish bounce.
+     * Creates 28 candles: gradual grind with two ascending swing highs and two ascending
+     * swing lows, ending at a bullish bounce off recent support.
      *
-     * <p>Satisfies all BUY entry guards:
+     * <p>Design constraints (verified analytically):
      * <ul>
-     *   <li>Trend (UP): window[i=8..27] has swing highs 112.0→116.5 (higher-high) and
-     *       swing lows 107.6→108.0 (higher-low) → bullishSignals=2 &gt; bearishSignals=0 ✓</li>
-     *   <li>Location: SMA of 28 closes ≈ 108.6; final close=109.5;
-     *       distanceFromEMA50 ≈ 0.83% ≤ 3% → onEMAPullback=true ✓</li>
-     *   <li>Resistance gap: nearest S/R resistance is 112.0 (Step-2 swing high);
-     *       gap = (112.0-109.5)/109.5 ≈ 2.28% &gt; 2% → nearResistance=false ✓</li>
-     *   <li>Patterns: BULLISH_ENGULFING(i=26) + BULLISH singles(i=26,27) → bullishCount ≥ 2 ✓</li>
+     *   <li>Trend (UP): window[i=8..27] swing highs 104.5 (i=10)→120.0 (i=17) (higher-high)
+     *       and swing lows 100.2 (i=13)→103.6 (i=24) (higher-low) → bullishSignals=2 ✓.
+     *       Phase-4 highs strictly decrease (105.3→104.8) so no lower-high forms.
+     *       i=19 low=103.6 prevents i=20 from being a pivot low.</li>
+     *   <li>EMA50 (simple avg of 28 closes, period&gt;candle count) ≈ 102.1; final close=105.0;
+     *       distanceFromEMA50 ≈ 2.87% ≤ 3% → onBullishPullback=true ✓</li>
+     *   <li>Support=103.6 (1.33% below price) → nearSupport=true ✓</li>
+     *   <li>Resistance=120.0 (14.3% above price) → nearResistance=false ✓</li>
+     *   <li>ATR(14) ≈ 1.58; ATR_BUFFER=0.79; buffered R:R ≈ 6.5 ≥ MIN_RR=2.0 ✓</li>
      * </ul>
      */
     private static List<MyCandle> bullishUptrendCandles() {
         List<MyCandle> candles = new ArrayList<>();
-        // Step 1 (i=0..6): advance 100→105 then pullback to 103. Outside analysis window.
-        candles.add(candle(99.7,  100.3, 100.7, 99.3,  0));
-        candles.add(candle(100.3, 101.1, 101.5, 99.9,  1));
-        candles.add(candle(101.1, 102.2, 102.6, 100.7, 2));
-        candles.add(candle(102.2, 103.5, 103.9, 101.8, 3));
-        candles.add(candle(103.5, 105.0, 105.5, 103.1, 4));
-        candles.add(candle(105.0, 104.0, 105.4, 103.6, 5));
-        candles.add(candle(104.0, 103.0, 104.4, 102.6, 6));
-        // Step 2 (i=7..14): advance 103→111.5, pullback to 108.
-        // Swing high i=12 (112.0) and swing low i=14 (107.6) — in analysis window.
-        candles.add(candle(103.2, 104.5, 104.9, 102.8, 7));
-        candles.add(candle(104.5, 106.0, 106.4, 104.1, 8));
-        candles.add(candle(106.0, 107.5, 107.9, 105.6, 9));
-        candles.add(candle(107.5, 109.0, 109.4, 107.1, 10));
-        candles.add(candle(109.0, 110.3, 110.7, 108.6, 11));
-        candles.add(candle(110.3, 111.5, 112.0, 109.9, 12)); // swing high 112.0
-        candles.add(candle(111.5, 110.0, 111.9, 109.6, 13));
-        candles.add(candle(110.0, 108.0, 110.4, 107.6, 14)); // swing low 107.6
-        // Step 3 (i=15..19): advance 108→115.5 (5 bullish candles).
-        candles.add(candle(108.2, 109.5, 109.9, 107.8, 15));
-        candles.add(candle(109.5, 111.0, 111.4, 109.1, 16));
-        candles.add(candle(111.0, 112.5, 112.9, 110.6, 17));
-        candles.add(candle(112.5, 114.0, 114.4, 112.1, 18));
-        candles.add(candle(114.0, 115.5, 115.9, 113.6, 19));
-        // Phase 2 (i=20..24): pullback 116→110 over 5 bearish candles.
-        // i=20 creates swing high 116.5 → higher than 112.0 → second higher-high.
-        candles.add(candle(116.0, 115.0, 116.5, 114.6, 20));
-        candles.add(candle(115.0, 113.8, 115.4, 113.4, 21));
-        candles.add(candle(113.8, 112.5, 114.2, 112.1, 22));
-        candles.add(candle(112.5, 111.2, 112.9, 110.8, 23));
-        candles.add(candle(111.2, 110.0, 111.6, 109.6, 24));
-        // Phase 3 (i=25..27): bullish bounce at ~110.
-        // Swing low i=25 (108.0) > i=14 (107.6) → higher-low → confirms UP trend.
-        // i=27 high=111.5 > i=26 high=111.2 so i=26 is NOT a new swing high.
-        candles.add(candle(110.5, 109.2, 111.0, 108.0, 25)); // bearish doji; swing low 108.0
-        candles.add(candle(109.1, 110.8, 111.2, 108.4, 26)); // bullish engulfing
-        candles.add(candle(109.0, 109.5, 111.5, 108.5, 27)); // bullish; final close=109.5
+        // Phase 0 (i=0..9): slow grind 99→101, small-body candles, ATR ≈ 0.8/candle.
+        candles.add(candle(99.0,  99.2,  99.5,  98.8,  0));
+        candles.add(candle(99.2,  99.4,  99.7,  98.9,  1));
+        candles.add(candle(99.4,  99.6,  99.9,  99.1,  2));
+        candles.add(candle(99.6,  99.9,  100.2, 99.3,  3));
+        candles.add(candle(99.9,  100.1, 100.4, 99.6,  4));
+        candles.add(candle(100.1, 100.3, 100.6, 99.8,  5));
+        candles.add(candle(100.3, 100.5, 100.8, 100.0, 6));
+        candles.add(candle(100.5, 100.7, 101.0, 100.2, 7));
+        candles.add(candle(100.7, 100.9, 101.2, 100.4, 8));
+        candles.add(candle(100.9, 101.1, 101.4, 100.6, 9));
+        // Phase 1 (i=10..12): first swing high 104.5 at i=10, then fade.
+        candles.add(candle(101.1, 101.4, 104.5, 100.8, 10)); // swing high 104.5
+        candles.add(candle(101.4, 101.2, 101.7, 100.9, 11));
+        candles.add(candle(101.2, 101.0, 101.5, 100.7, 12));
+        // Phase 2 (i=13..16): first swing low 100.2 at i=13, recovery.
+        candles.add(candle(101.0, 101.1, 101.4, 100.2, 13)); // swing low 100.2
+        candles.add(candle(101.1, 101.3, 101.6, 100.9, 14));
+        candles.add(candle(101.3, 101.5, 101.8, 101.0, 15));
+        candles.add(candle(101.5, 101.7, 102.0, 101.2, 16));
+        // Phase 3 (i=17): spike candle — close=105.0 keeps EMA50 ≈ 102.1; high=120.0
+        // forms distant resistance (14.3% above final price). ATR decays to ≈1.58 by i=27.
+        candles.add(candle(101.7, 105.0, 120.0, 101.4, 17)); // swing high 120.0 — distant resistance
+        // Phase 4 (i=18..23): consolidation. Highs strictly decrease (105.3→104.8) so no
+        // intermediate swing high forms. i=19 low=103.6 prevents i=20 from being a pivot low.
+        candles.add(candle(105.0, 104.5, 105.3, 104.2, 18));
+        candles.add(candle(104.5, 104.0, 105.2, 103.6, 19)); // low=103.6 — first pivot at 103.6
+        candles.add(candle(104.0, 104.2, 105.1, 103.7, 20)); // low=103.7 > 103.6 → i=19 is swing low
+        candles.add(candle(104.2, 104.3, 105.0, 103.9, 21));
+        candles.add(candle(104.3, 104.3, 104.9, 103.9, 22));
+        candles.add(candle(104.3, 104.4, 104.8, 104.0, 23));
+        // Phase 5 (i=24): second pivot low 103.6 = i=19 → equal (lowerLows stays 0) → UP trend.
+        candles.add(candle(104.4, 103.8, 104.7, 103.6, 24)); // swing low 103.6 (nearSupport ✓)
+        // Phase 6 (i=25..27): bullish bounce; final close=105.0 (price 2.87% above EMA50 ✓).
+        candles.add(candle(103.8, 104.2, 104.6, 103.9, 25));
+        candles.add(candle(104.2, 104.5, 104.8, 104.0, 26)); // bullish
+        candles.add(candle(104.5, 105.0, 105.3, 104.2, 27)); // close=105.0
         return candles;
     }
 
@@ -389,7 +392,7 @@ class PriceActionStrategyTest {
         @Test
         @DisplayName("nearResistanceDetected is false when price is well below resistance")
         void nearResistanceDetectedFalseWhenFarFromResistance() {
-            List<MyCandle> candles = bullishUptrendCandles(); // gap=2.28% > 2%
+            List<MyCandle> candles = bullishUptrendCandles(); // gap=14.3% >> 2%
 
             TradeDecision decision = strategy.analyze(candles, "BTC-USDC");
 

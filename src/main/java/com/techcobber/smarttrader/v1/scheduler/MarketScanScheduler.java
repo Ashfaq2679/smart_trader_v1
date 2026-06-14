@@ -24,11 +24,14 @@ import com.techcobber.smarttrader.v1.repositories.UserPreferencesRepository;
 import com.techcobber.smarttrader.v1.services.CoinbaseClientFactory;
 import com.techcobber.smarttrader.v1.services.CoinbasePublicServiceImpl;
 import com.techcobber.smarttrader.v1.services.MarketScannerService;
+import com.techcobber.smarttrader.v1.services.MarketScannerService.GranularityConfig;
 import com.techcobber.smarttrader.v1.services.OrderService;
 import com.techcobber.smarttrader.v1.services.TradeDecisionService;
 import com.techcobber.smarttrader.v1.services.TradingOrchestrator;
 import com.techcobber.smarttrader.v1.services.UserService;
+import com.techcobber.smarttrader.v1.strategy.PriceActionStrategy;
 import com.techcobber.smarttrader.v1.strategy.RiskManager.RiskAssessment;
+import com.techcobber.smarttrader.v1.strategy.TrendAnalyzer;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.RequiredArgsConstructor;
@@ -60,6 +63,12 @@ public class MarketScanScheduler {
 	private String defaultUserId;
 	@Value("${candles.ignore.names:BTC-USDC,ETH-USDC}")
 	private List<String> ignoreProductIds;
+	@Value("${trading.granularity.ltf:FIFTEEN_MINUTE}")
+	private String ltfGranularityName;
+	@Value("${trading.granularity.confirm:ONE_HOUR}")
+	private String confirmGranularityName;
+	@Value("${trading.granularity.htf:TWO_HOUR}")
+	private String htfGranularityName;
 	static final int DEFAULT_LIMIT = 10;
 	private static final int CANDLE_COUNT = 100;
 
@@ -108,7 +117,8 @@ public class MarketScanScheduler {
 	 */
 	public List<CoinScanResult> runScanNow(String userId, int limit) throws CoinbaseAdvancedException {
 		CoinbasePublicServiceImpl publicService = createPublicService(userId);
-		MarketScannerService scanner = new MarketScannerService(publicService);
+		MarketScannerService scanner = new MarketScannerService(
+				publicService, new PriceActionStrategy(), new TrendAnalyzer(), null, buildGranularityConfig());
 		List<CoinScanResult> results = scanner.scanUSDCPairs(limit);
 		latestResults = results;
 		return results;
@@ -133,11 +143,12 @@ public class MarketScanScheduler {
 	 */
 	public List<MyCandle> fetchCandlesForProduct(String userId, String productId) throws CoinbaseAdvancedException {
 		CoinbasePublicServiceImpl publicService = createPublicService(userId);
+		Granularity ltf = buildGranularityConfig().ltf();
 
 		long endTime = Instant.now().getEpochSecond();
-		long startTime = endTime - 3600L * CANDLE_COUNT;
+		long startTime = endTime - MarketScannerService.granularityToSeconds(ltf) * CANDLE_COUNT;
 
-		ListCandles listCandles = publicService.fetchCandles(productId, startTime, endTime, Granularity.ONE_HOUR);
+		ListCandles listCandles = publicService.fetchCandles(productId, startTime, endTime, ltf);
 		if (listCandles == null || listCandles.getCandles() == null) {
 			return Collections.emptyList();
 		}
@@ -230,14 +241,15 @@ public class MarketScanScheduler {
 			return Collections.emptyList();
 		}
 		CoinbasePublicServiceImpl publicService = createPublicService(defaultUserId);
+		Granularity ltf = buildGranularityConfig().ltf();
 
 		long endTime = Instant.now().getEpochSecond();
-		long startTime = endTime - 3600L * CANDLE_COUNT;
+		long startTime = endTime - MarketScannerService.granularityToSeconds(ltf) * CANDLE_COUNT;
 		ListCandles listCandles = null;
 
 		log.info("Fetching candles for product {}", productId);
 		try {
-			listCandles = publicService.fetchCandles(productId, startTime, endTime, Granularity.ONE_HOUR);
+			listCandles = publicService.fetchCandles(productId, startTime, endTime, ltf);
 		} catch (Exception e) {
 			log.error("Failed to fetch candles for product {}: {}", productId, e.getMessage());
 		}
@@ -248,6 +260,27 @@ public class MarketScanScheduler {
 		// Sort candles by start time ascending (newest last) before returning
 		return listCandles.getCandles().stream().sorted((c1, c2) -> Long.compare(c1.getStart(), c2.getStart()))
 				.toList();
+	}
+
+	/**
+	 * Builds a {@link GranularityConfig} from injected property values.
+	 * Falls back to defaults for any unrecognised property value.
+	 */
+	private GranularityConfig buildGranularityConfig() {
+		Granularity ltf     = parseGranularity(ltfGranularityName,     Granularity.FIFTEEN_MINUTE);
+		Granularity confirm = parseGranularity(confirmGranularityName, Granularity.ONE_HOUR);
+		Granularity htf     = parseGranularity(htfGranularityName,     Granularity.TWO_HOUR);
+		return new GranularityConfig(ltf, confirm, htf);
+	}
+
+	private static Granularity parseGranularity(String name, Granularity fallback) {
+		if (name == null || name.isBlank()) return fallback;
+		try {
+			return Granularity.valueOf(name.trim().toUpperCase());
+		} catch (IllegalArgumentException e) {
+			log.warn("Unknown granularity '{}' — using default {}", name, fallback);
+			return fallback;
+		}
 	}
 
 	/**
