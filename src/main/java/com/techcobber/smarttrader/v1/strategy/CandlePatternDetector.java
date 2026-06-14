@@ -37,7 +37,7 @@ public class CandlePatternDetector {
 			return patterns;
 		}
 
-		log.info("Starting candle pattern detection on {} candles", candles.size());
+		log.debug("Starting candle pattern detection on {} candles", candles.size());
 
 		// Single-candle patterns from all candles (focus on recent ones)
 		int singleStart = Math.max(0, candles.size() - 5);
@@ -48,7 +48,7 @@ public class CandlePatternDetector {
 				for (CandleType type : types) {
 					PatternBias bias = classifyBias(type);
 					patterns.add(new DetectedPattern(type.name(), bias, i));
-					log.info("Single-candle pattern at index {}: {} (bias: {})", i, type.name(), bias);
+					log.debug("Single-candle pattern at index {}: {} (bias: {})", i, type.name(), bias);
 				}
 			}
 		}
@@ -62,7 +62,7 @@ public class CandlePatternDetector {
 			for (CandleType type : twoPatterns) {
 				PatternBias bias = classifyBias(type);
 				patterns.add(new DetectedPattern(type.name(), bias, i));
-				log.info("Two-candle pattern at index {}-{}: {} (bias: {})", i - 1, i, type.name(), bias);
+				log.debug("Two-candle pattern at index {}-{}: {} (bias: {})", i - 1, i, type.name(), bias);
 			}
 		}
 
@@ -76,7 +76,7 @@ public class CandlePatternDetector {
 			for (CandleType type : threePatterns) {
 				PatternBias bias = classifyBias(type);
 				patterns.add(new DetectedPattern(type.name(), bias, i));
-				log.info("Three-candle pattern at index {}-{}-{}: {} (bias: {})",
+				log.debug("Three-candle pattern at index {}-{}-{}: {} (bias: {})",
 						i - 2, i - 1, i, type.name(), bias);
 			}
 		}

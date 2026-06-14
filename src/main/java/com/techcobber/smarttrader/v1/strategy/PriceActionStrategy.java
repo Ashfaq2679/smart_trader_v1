@@ -121,8 +121,8 @@ public class PriceActionStrategy implements TradingStrategy {
 			com.techcobber.smarttrader.v1.models.UserPreferences prefs,
 			Boolean consolidationOverride) {
 
-		log.info("=== PriceAction Strategy Analysis ===");
-		log.info("Analyzing {} candles", candles == null ? 0 : candles.size());
+		log.debug("=== PriceAction Strategy Analysis ===");
+		log.debug("Analyzing {} candles", candles == null ? 0 : candles.size());
 
 		// Guard: insufficient data
 		if (candles == null || candles.size() < MIN_CANDLES) {
@@ -165,7 +165,7 @@ public class PriceActionStrategy implements TradingStrategy {
 		String reasoning  = buildReasoning(result.signal(), ctx.trend(), ctx.patterns(),
 				ctx.currentPrice(), ctx.nearestSupport(), ctx.nearestResistance());
 
-		log.info("=== Product: {} | Signal: {} | Confidence: {} | Score: {} | R:R: {} | Patterns: {} ===",
+		log.debug("=== Product: {} | Signal: {} | Confidence: {} | Score: {} | R:R: {} | Patterns: {} ===",
 				productId, result.signal(), String.format("%.2f", confidence),
 				result.score(), String.format("%.2f", result.rr()), patternNames);
 
@@ -223,7 +223,7 @@ public class PriceActionStrategy implements TradingStrategy {
 		if (atrSpike) log.info("ATR spike detected — volatility context will gate entries (§6)");
 
 		// Step 1: S/R detection
-		log.info("--- Step 1: Support / Resistance Detection ---");
+		log.debug("--- Step 1: Support / Resistance Detection ---");
 		List<Level> levels     = srDetector.detectLevels(candles, SR_LOOKBACK);
 		List<Level> supports   = levels.stream().filter(l -> l.getType() == LevelType.SUPPORT).toList();
 		List<Level> resistances = levels.stream().filter(l -> l.getType() == LevelType.RESISTANCE).toList();
@@ -244,12 +244,12 @@ public class PriceActionStrategy implements TradingStrategy {
 				nearestResistance != null ? String.format("%.2f", nearestResistance) : "none");
 
 		// Step 2: Trend analysis
-		log.info("--- Step 2: Trend Analysis ---");
+		log.debug("--- Step 2: Trend Analysis ---");
 		TrendResult trend = trendAnalyzer.analyzeTrend(candles, TREND_LOOKBACK);
 		log.info("Trend: {} (strength: {})", trend.getDirection(), String.format("%.2f", trend.getStrength()));
 
 		// Step 3: Pattern detection
-		log.info("--- Step 3: Pattern Detection ---");
+		log.debug("--- Step 3: Pattern Detection ---");
 		List<DetectedPattern> patterns = patternDetector.detectPatterns(candles);
 		long bullishPats = patterns.stream().filter(p -> p.getBias() == PatternBias.BULLISH).count();
 		long bearishPats = patterns.stream().filter(p -> p.getBias() == PatternBias.BEARISH).count();

@@ -41,27 +41,27 @@ public class TradingOrchestrator {
 					.confidence(0.0)
 					.reasoning("No candle data available for analysis")
 					.build();
-		log.info("========================================");
+		log.debug("========================================");
 		log.info("Starting trading analysis for product: {}", productId);
-		log.info("Candle count: {}", candles.size());
-		log.info("========================================");
+		log.debug("Candle count: {}", candles.size());
+		log.debug("========================================");
 
 		PriceActionStrategy strategy = new PriceActionStrategy();
-		log.info("Using strategy: {}", strategy.getName());
+		log.debug("Using strategy: {}", strategy.getName());
 
 		TradeDecision decision = strategy.analyze(candles, productId);
 		decision.setProductId(productId);
 		decision.setSuggestedPrice(candles.get(candles.size() - 1).getClose());
 
-		log.info("========================================");
+		log.debug("========================================");
 		log.info("Analysis complete for {}", productId);
-		log.info("Product: {} | Signal: {} | Confidence: {} | Trend: {}",
+		log.debug("Product: {} | Signal: {} | Confidence: {} | Trend: {}",
 				productId, decision.getSignal(), decision.getConfidence(), decision.getTrendDirection());
-		log.info("Detected patterns: {}", decision.getDetectedPatterns());
-		log.info("Support: {} | Resistance: {}",
+		log.debug("Detected patterns: {}", decision.getDetectedPatterns());
+		log.debug("Support: {} | Resistance: {}",
 				decision.getNearestSupport(), decision.getNearestResistance());
-		log.info("Reasoning: {}", decision.getReasoning());
-		log.info("========================================");
+		log.info("Reasoning: Product: {} | {}", productId, decision.getReasoning());
+		log.debug("========================================");
 
 		return decision;
 	}
@@ -104,7 +104,7 @@ public class TradingOrchestrator {
 					decision.getSignal(), decision.getConfidence(), minScore, consolidating);
 		}
 
-		log.info("Full analysis complete for {}", productId);
+		log.debug("Full analysis complete for {}", productId);
 		return result;
 	}
 
