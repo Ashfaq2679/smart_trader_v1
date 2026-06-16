@@ -256,7 +256,7 @@ public class MarketScanScheduler {
 		if (listCandles == null || listCandles.getCandles() == null) {
 			return Collections.emptyList();
 		}
-		log.info("Fetched {} candles for product BTC-USDC", listCandles.getCandles().size());
+		log.info("Fetched {} candles for product {}", listCandles.getCandles().size(), productId);
 		// Sort candles by start time ascending (newest last) before returning
 		return listCandles.getCandles().stream().sorted((c1, c2) -> Long.compare(c1.getStart(), c2.getStart()))
 				.toList();
