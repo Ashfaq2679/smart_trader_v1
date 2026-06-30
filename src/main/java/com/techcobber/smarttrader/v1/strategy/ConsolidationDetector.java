@@ -26,7 +26,7 @@ public class ConsolidationDetector {
 
     private static final double DEFAULT_RANGE_THRESHOLD_PCT = 2.5;
     private static final double DEFAULT_ATR_THRESHOLD_PCT = 0.5;
-    private static final int DEFAULT_LOOKBACK = 20;
+    private static final int DEFAULT_LOOKBACK = 10;	//Reduced from 20 to 10 for faster detection of consolidation
 	private static final double VOLUME_BREAKOUT_MULTIPLIER = 1.5;
 
     private final AtrIndicator atrIndicator;

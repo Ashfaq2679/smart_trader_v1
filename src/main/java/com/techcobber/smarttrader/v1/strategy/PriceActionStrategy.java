@@ -47,6 +47,8 @@ public class PriceActionStrategy implements TradingStrategy {
 	private static final double ATR_BUFFER_MULTIPLIER     = 0.5;
 	/** EMA distance below this percentage is treated as neutral — no EMA alignment bonus. */
 	private static final double EMA_NEUTRAL_THRESHOLD     = 0.5;
+	private static  double BREAKOUT_RISK_ATR = 1.2;				// 1.5 means 1.5 Higher win rate, fewer trades, missing early moved
+	private static  double BREAKOUT_REWARD_ATR = 3.0;				// 3.5 means 3.5 ATR reward on breakout entries
 
 	private final SupportResistanceDetector srDetector            = new SupportResistanceDetector();
 	private final TrendAnalyzer             trendAnalyzer          = new TrendAnalyzer();
@@ -87,7 +89,9 @@ public class PriceActionStrategy implements TradingStrategy {
 			boolean htfBearish,
 			double  ema50ThresholdPct,
 			double  resistanceProximityPct,
-			MultiTimeframeResult  mtfResult
+			MultiTimeframeResult  mtfResult,
+			boolean isStrongBodyCandle, 
+			boolean isVolumeSpike
 	) {}
 
 	/** Outcome of the full candidate pipeline (signal + edge score + R:R). */
@@ -198,7 +202,14 @@ public class PriceActionStrategy implements TradingStrategy {
 			MultiTimeframeResult mtfResult,
 			Boolean consolidationOverride) {
 
-		double currentPrice = candles.get(candles.size() - 1).getClose();
+		MyCandle latestCandle = candles.get(candles.size() - 1);
+		double currentPrice = latestCandle.getClose();
+		double body = Math.abs(latestCandle.getClose() - latestCandle.getOpen());
+		double range = latestCandle.getHigh() - latestCandle.getLow();
+
+		boolean isStrongBodyCandle = range > 0 && (body / range) >= 0.6;
+		boolean isVolumeSpike = isVolumeSpike(candles, 20, 1.8) ;  // for potential future use in volatility or breakout filters
+		
 
 		// Indicators
 		double ema50 = emaIndicator.calculate(candles, 50);
@@ -301,7 +312,7 @@ public class PriceActionStrategy implements TradingStrategy {
 				isAboveEMA, bullishLocation, bearishLocation, nearSupport, nearResistance,
 				htfBullish, htfBearish,
 				ema50ThresholdPct, resistanceProximityPct,
-				mtfResult);
+				mtfResult, isStrongBodyCandle, isVolumeSpike);
 	}
 
 	// -----------------------------------------------------------------------
@@ -318,18 +329,60 @@ public class PriceActionStrategy implements TradingStrategy {
 	            .filter(p -> p.getBias() == PatternBias.BEARISH).count();
 
 	    // ----------------------------------------------------------------
-	    // 0. NO-TRADE ZONE (tight range filter)
+	    // 0.5 momentum or structure break
+	    // ----------------------------------------------------------------
+	    boolean breakoutUp =
+	            ctx.nearestResistance() != null &&
+	            ctx.currentPrice() > ctx.nearestResistance();
+
+	    boolean breakoutDown =
+	            ctx.nearestSupport() != null &&
+	            ctx.currentPrice() < ctx.nearestSupport();
+
+	    // Optional but HIGHLY recommended
+	    boolean strongCandle = ctx.isStrongBodyCandle(); // large body vs wick
+	    boolean volumeSpike  = ctx.isVolumeSpike();  // current volume significantly above recent average
+
+	    boolean fakeBreakoutUp =
+	            breakoutUp && (!strongCandle || !volumeSpike);
+
+	    if (fakeBreakoutUp) {
+	        log.info("Fake breakout UPSIDE detected — ignoring");
+	        breakoutUp = false;
+	    }
+	    
+	    boolean validBreakoutUp =
+	            breakoutUp &&
+	            strongCandle &&
+	            volumeSpike &&
+	            ctx.trend().getDirection() != TrendDirection.DOWN;
+
+	    boolean validBreakoutDown =
+	            breakoutDown &&
+	            strongCandle &&
+	            volumeSpike &&
+	            ctx.trend().getDirection() != TrendDirection.UP;
+	    
+	    boolean recentBreakoutUp =
+	            ctx.nearestResistance() != null &&
+	            ctx.currentPrice() > ctx.nearestResistance() * 0.98; // still near breakout zone
+
+	    boolean breakoutContinuation =
+	            recentBreakoutUp &&
+	            ctx.isAboveEMA() &&
+	            ctx.trend().getDirection() == TrendDirection.UP;
+	 // ----------------------------------------------------------------
+	    // 0.75 NO-TRADE ZONE (tight range filter)
 	    // ----------------------------------------------------------------
 	    if (ctx.nearestSupport() != null && ctx.nearestResistance() != null) {
 	        double rangePct = (ctx.nearestResistance() - ctx.nearestSupport()) / price * 100.0;
 
-	        if (rangePct < MIN_RANGE_PCT) {
+	        if (rangePct < MIN_RANGE_PCT && !validBreakoutUp && !breakoutContinuation) {
 	            log.info("HOLD: tight range detected ({}%) — no-trade zone",
 	                    String.format("%.2f", rangePct));
 	            return new SignalResult(Signal.HOLD, 0, 1.0);
 	        }
 	    }
-
 	    // ----------------------------------------------------------------
 	    // 1. PROTECTIVE SELL (but NOT into support)
 	    // ----------------------------------------------------------------
@@ -356,75 +409,145 @@ public class PriceActionStrategy implements TradingStrategy {
 	    // ----------------------------------------------------------------
 	    // 2. CANDIDATE BUILDING
 	    // ----------------------------------------------------------------
-	    boolean longCandidate = ctx.trend().getDirection() == TrendDirection.UP
+	    boolean longCandidate =
+	            (ctx.trend().getDirection() == TrendDirection.UP
 	            && ctx.bullishLocation()
 	            && !ctx.nearResistance()
-	            && ctx.htfBullish();
-
-	    boolean shortCandidate = ctx.trend().getDirection() == TrendDirection.DOWN
+	            && ctx.htfBullish())
+	            || (validBreakoutUp && ctx.htfBullish())
+	            || (breakoutContinuation && ctx.htfBullish());
+	    
+	    boolean shortCandidate =
+	            (ctx.trend().getDirection() == TrendDirection.DOWN
 	            && ctx.bearishLocation()
 	            && !ctx.nearSupport()
-	            && ctx.htfBearish();
+	            && ctx.htfBearish())
+	            || (validBreakoutDown && ctx.htfBearish());
 
 	    log.info("--- Step 2: Candidates — long={} | short={} ---", longCandidate, shortCandidate);
 
-	    // ----------------------------------------------------------------
-	    // 3. RISK:REWARD WITH BUFFERS (realistic)
-	    // ----------------------------------------------------------------
-	    double longRR = 1.0;
-	    double shortRR = 1.0;
+	 // ----------------------------------------------------------------
+	 // 3. RISK:REWARD WITH BUFFERS (realistic + breakout-aware)
+	 // ----------------------------------------------------------------
+	 double longRR = 1.0;
+	 double shortRR = 1.0;
 
-	    double atr = ctx.atr();
-	    double buffer = atr * ATR_BUFFER_MULTIPLIER;
+	 double atr = ctx.atr();
+	 double buffer = atr * ATR_BUFFER_MULTIPLIER;
 
-	    if (longCandidate && ctx.nearestSupport() != null && ctx.nearestResistance() != null) {
+	 // ----------------------
+	 // LONG SIDE
+	 // ----------------------
+	 if (longCandidate) {
 
-	        double risk = price - (ctx.nearestSupport() - buffer);
-	        double reward = (ctx.nearestResistance() - buffer) - price;
+	     // 🔥 Breakout override (ATR-based R:R)
+	     if (validBreakoutUp) {
 
-	        if (risk > 0 && reward > 0) {
-	            longRR = reward / risk;
-	        } else {
-	            log.info("Long R:R degenerate (reward={}) — buffer={} consumed target margin; candidate rejected",
-	                    String.format("%.4f", reward), String.format("%.4f", buffer));
-	            longCandidate = false;
-	        }
+	         double risk = atr * BREAKOUT_RISK_ATR;
+	         double reward = atr * BREAKOUT_REWARD_ATR * 0.9;
 
-	        if (longCandidate && longRR < MIN_RR) {
-	            log.info("Long rejected: R:R {} < {}", String.format("%.2f", longRR), MIN_RR);
-	            longCandidate = false;
-	        }
-	    }
+	         if (risk > 0 && reward > 0) {
+	             longRR = reward / risk;
+	         } else {
+	             log.info("Breakout Long R:R degenerate — candidate rejected");
+	             longCandidate = false;
+	         }
 
-	    if (shortCandidate && ctx.nearestSupport() != null && ctx.nearestResistance() != null) {
+	         if (longCandidate && longRR < MIN_RR) {
+	             log.info("Breakout long rejected: R:R {} < {}",
+	                     String.format("%.2f", longRR), MIN_RR);
+	             longCandidate = false;
+	         }
 
-	        double risk = (ctx.nearestResistance() + buffer) - price;
-	        double reward = price - (ctx.nearestSupport() + buffer);
+	         log.info("Breakout LONG R:R (ATR-based): {}",
+	                 String.format("%.2f", longRR));
+	     }
 
-	        if (risk > 0 && reward > 0) {
-	            shortRR = reward / risk;
-	        } else {
-	            log.info("Short R:R degenerate (reward={}) — buffer={} consumed target margin; candidate rejected",
-	                    String.format("%.4f", reward), String.format("%.4f", buffer));
-	            shortCandidate = false;
-	        }
+	     // 🔽 Existing pullback logic (unchanged)
+	     else if (ctx.nearestSupport() != null && ctx.nearestResistance() != null) {
 
-	        if (shortCandidate && shortRR < MIN_RR) {
-	            log.info("Short rejected: R:R {} < {}", String.format("%.2f", shortRR), MIN_RR);
-	            shortCandidate = false;
-	        }
-	    }
+	         double risk = price - (ctx.nearestSupport() - buffer);
+	         double reward = (ctx.nearestResistance() - buffer) - price;
 
-	    log.info("--- Step 3: R:R — long={} | short={} ---",
-	            String.format("%.2f", longRR), String.format("%.2f", shortRR));
+	         if (risk > 0 && reward > 0) {
+	             longRR = reward / risk;
+	         } else {
+	             log.info("Long R:R degenerate (reward={}) — buffer={} consumed target margin; candidate rejected",
+	                     String.format("%.4f", reward), String.format("%.4f", buffer));
+	             longCandidate = false;
+	         }
+
+	         if (longCandidate && longRR < MIN_RR) {
+	             log.info("Long rejected: R:R {} < {}",
+	                     String.format("%.2f", longRR), MIN_RR);
+	             longCandidate = false;
+	         }
+	     }
+	 }
+
+	 // ----------------------
+	 // SHORT SIDE
+	 // ----------------------
+	 if (shortCandidate) {
+
+	     // 🔥 Breakout override (ATR-based R:R)
+	     if (validBreakoutDown) {
+
+	         double risk = atr * BREAKOUT_RISK_ATR;
+	         double reward = atr * BREAKOUT_REWARD_ATR * 0.9;
+
+	         if (risk > 0 && reward > 0) {
+	             shortRR = reward / risk;
+	         } else {
+	             log.info("Breakout Short R:R degenerate — candidate rejected");
+	             shortCandidate = false;
+	         }
+
+	         if (shortCandidate && shortRR < MIN_RR) {
+	             log.info("Breakout short rejected: R:R {} < {}",
+	                     String.format("%.2f", shortRR), MIN_RR);
+	             shortCandidate = false;
+	         }
+
+	         log.info("Breakout SHORT R:R (ATR-based): {}",
+	                 String.format("%.2f", shortRR));
+	     }
+
+	     // 🔽 Existing pullback logic (unchanged)
+	     else if (ctx.nearestSupport() != null && ctx.nearestResistance() != null) {
+
+	         double risk = (ctx.nearestResistance() + buffer) - price;
+	         double reward = price - (ctx.nearestSupport() + buffer);
+
+	         if (risk > 0 && reward > 0) {
+	             shortRR = reward / risk;
+	         } else {
+	             log.info("Short R:R degenerate (reward={}) — buffer={} consumed target margin; candidate rejected",
+	                     String.format("%.4f", reward), String.format("%.4f", buffer));
+	             shortCandidate = false;
+	         }
+
+	         if (shortCandidate && shortRR < MIN_RR) {
+	             log.info("Short rejected: R:R {} < {}",
+	                     String.format("%.2f", shortRR), MIN_RR);
+	             shortCandidate = false;
+	         }
+	     }
+	 }
+
+	 log.info("--- Step 3: R:R — long={} | short={} ---",
+	         String.format("%.2f", longRR),
+	         String.format("%.2f", shortRR));
 
 	    // ----------------------------------------------------------------
 	    // 4. ATR VOLATILITY FILTER
 	    // ----------------------------------------------------------------
 	    if (ctx.atrSpike()) {
-	        boolean breakout =
-	                (ctx.nearestResistance() != null && price > ctx.nearestResistance()) ||
-	                (ctx.nearestSupport() != null && price < ctx.nearestSupport());
+//	        boolean breakout =
+//	                (validBreakoutUp && longCandidate) ||
+//	                (validBreakoutDown && shortCandidate);
+	    	
+	    	boolean breakout = validBreakoutUp || validBreakoutDown || breakoutContinuation;
 
 	        if (!breakout) {
 	            log.info("ATR spike without breakout — blocking trades");
@@ -486,6 +609,14 @@ public class PriceActionStrategy implements TradingStrategy {
 	    if (!longCandidate) longScore = 0;
 	    if (!shortCandidate) shortScore = 0;
 
+	    if (validBreakoutUp && longCandidate) {
+	        longScore += 3; // strong signal
+	    }
+
+	    if (validBreakoutDown) {
+	        shortScore += 3;
+	    }
+	    
 	    log.info("--- Step 5: Scores — long={} | short={} ---", longScore, shortScore);
 
 	    // ----------------------------------------------------------------
@@ -550,5 +681,21 @@ public class PriceActionStrategy implements TradingStrategy {
 		} catch (NumberFormatException e) {
 			return defaultValue;
 		}
+	}
+	
+	public boolean isVolumeSpike(List<MyCandle> candles, int lookback, double multiplier) {
+	    if (candles == null || candles.size() < lookback + 1) return false;
+	    int size = candles.size();
+	    // Current candle volume
+	    double currentVolume = candles.get(size - 1).getVolume();
+	    // Average volume of previous candles (exclude current)
+	    double avgVolume = candles.subList(size - 1 - lookback, size - 1).stream()
+	            .mapToDouble(MyCandle::getVolume)
+	            .average()
+	            .orElse(0.0);
+
+	    if (avgVolume == 0) return false;
+	    double ratio = currentVolume / avgVolume;
+	    return ratio >= multiplier;
 	}
 }

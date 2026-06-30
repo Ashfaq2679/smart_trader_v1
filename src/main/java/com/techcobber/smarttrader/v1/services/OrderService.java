@@ -273,6 +273,7 @@ public class OrderService {
 				order.setAverageFilledPrice(cbOrder.getAverageFilledPrice());
 				order.setTotalFees(cbOrder.getTotalFees());
 				order.setUpdatedAt(LocalDateTime.now());
+				order.setComments(new StringBuilder("ENH-").append(order.getComments()).toString());
 				orderRepository.save(order);
 				log.info("Order status synced for [{}]: status={}", orderId, cbOrder.getStatus());
 			}
