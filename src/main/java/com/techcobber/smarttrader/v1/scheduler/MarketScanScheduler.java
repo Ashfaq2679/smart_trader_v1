@@ -19,10 +19,10 @@ import com.techcobber.smarttrader.v1.models.OrderResponse;
 import com.techcobber.smarttrader.v1.models.TradeDecision;
 import com.techcobber.smarttrader.v1.models.TradeDecision.Signal;
 import com.techcobber.smarttrader.v1.models.UserPreferences;
-import com.techcobber.smarttrader.v1.repositories.CoinsRepository;
 import com.techcobber.smarttrader.v1.repositories.UserPreferencesRepository;
 import com.techcobber.smarttrader.v1.services.CoinbaseClientFactory;
 import com.techcobber.smarttrader.v1.services.CoinbasePublicServiceImpl;
+import com.techcobber.smarttrader.v1.services.CoinsService;
 import com.techcobber.smarttrader.v1.services.MarketScannerService;
 import com.techcobber.smarttrader.v1.services.MarketScannerService.GranularityConfig;
 import com.techcobber.smarttrader.v1.services.OrderService;
@@ -61,8 +61,6 @@ public class MarketScanScheduler {
 
 	@Value("${APP_DEFAULT_USER}")
 	private String defaultUserId;
-	@Value("${candles.ignore.names:BTC-USDC,ETH-USDC}")
-	private List<String> ignoreProductIds;
 	@Value("${trading.granularity.ltf:FIFTEEN_MINUTE}")
 	private String ltfGranularityName;
 	@Value("${trading.granularity.confirm:ONE_HOUR}")
@@ -74,10 +72,10 @@ public class MarketScanScheduler {
 
 	private final CoinbaseClientFactory coinbaseClientFactory;
 	private final CircuitBreakerRegistry circuitBreakerRegistry;
-
+	private final CoinsService coinsService;
 	private volatile List<CoinScanResult> latestResults = Collections.emptyList();
 	private final TradingOrchestrator tradingOrchestrator;
-	private final CoinsRepository coinsRepository;
+	
 	private final TradeDecisionService tradeDecisionService; // optional, may be null
 	private final OrderService orderService;
 	private final UserPreferencesRepository userPreferencesRepository;
@@ -162,13 +160,10 @@ public class MarketScanScheduler {
 		log.info("Scheduled order status update completed.");
 	}
 
-	@Scheduled(fixedDelayString = "${scanner.candles.interval.ms:3600000}", initialDelayString = "${scanner.candles.initial.delay.ms:120000}")
+	@Scheduled(fixedDelayString = "${scanner.candles.interval.ms:300000}", initialDelayString = "${scanner.candles.initial.delay.ms:120000}")
 	public void scheduledCandleFetch() {
 		log.info("Scheduled candle fetch starting…");
-		List<String> productIds = coinsRepository.findAll().stream()
-				.filter(coin -> coin.productId() != null
-						&& (ignoreProductIds == null || !ignoreProductIds.contains(coin.productId())))
-				.map(coin -> coin.productId()).toList();
+		List<String> productIds = coinsService.findProductIdToProcess();
 		try {
 			productIds.forEach(pId -> {
 				List<MyCandle> candles = fetchCandlesForProduct(pId);
