@@ -52,7 +52,7 @@ class MultiTimeframeAnalyzerTest {
     class AlignmentTests {
 
         @Test
-        @DisplayName("Aligned when 1D=UP, 4H=UP, 1H=UP")
+        @DisplayName("Aligned when 4H=UP, 1H=UP, 15m=UP")
         void allUp() {
             when(mockTrendAnalyzer.analyzeTrend(candles(5), 20)).thenReturn(trend(TrendDirection.UP, 0.8));
             List<MyCandle> ltf  = candles(5);
@@ -67,7 +67,7 @@ class MultiTimeframeAnalyzerTest {
         }
 
         @Test
-        @DisplayName("NOT aligned when 1D=DOWN")
+        @DisplayName("NOT aligned when 4H=DOWN")
         void htfDown() {
             List<MyCandle> ltf  = candles(5);
             List<MyCandle> conf = candles(5);
@@ -82,7 +82,7 @@ class MultiTimeframeAnalyzerTest {
         }
 
         @Test
-        @DisplayName("NOT aligned when 4H=DOWN contradicts 1H=UP")
+        @DisplayName("NOT aligned when 1H=DOWN contradicts 15m=UP")
         void confirmDown_ltfUp() {
                 // Use different-length lists so Mockito's equals-based matching doesn't confuse stubs
                 List<MyCandle> ltf  = candles(5);
@@ -97,7 +97,7 @@ class MultiTimeframeAnalyzerTest {
             }
 
         @Test
-        @DisplayName("Aligned when 1D=SIDEWAYS, 4H=UP, 1H=UP")
+        @DisplayName("Aligned when 4H=SIDEWAYS, 1H=UP, 15m=UP")
         void htfSidewaysAllowsBuy() {
             List<MyCandle> ltf  = candles(5);
             List<MyCandle> conf = candles(5);

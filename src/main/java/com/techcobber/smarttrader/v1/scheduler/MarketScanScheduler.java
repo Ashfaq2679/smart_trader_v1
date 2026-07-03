@@ -17,14 +17,21 @@ import com.techcobber.smarttrader.v1.models.MyCandle;
 import com.techcobber.smarttrader.v1.models.OrderRequest;
 import com.techcobber.smarttrader.v1.models.OrderResponse;
 import com.techcobber.smarttrader.v1.models.TradeDecision;
-import com.techcobber.smarttrader.v1.repositories.CoinsRepository;
+import com.techcobber.smarttrader.v1.models.TradeDecision.Signal;
+import com.techcobber.smarttrader.v1.models.UserPreferences;
+import com.techcobber.smarttrader.v1.repositories.UserPreferencesRepository;
 import com.techcobber.smarttrader.v1.services.CoinbaseClientFactory;
 import com.techcobber.smarttrader.v1.services.CoinbasePublicServiceImpl;
+import com.techcobber.smarttrader.v1.services.CoinsService;
 import com.techcobber.smarttrader.v1.services.MarketScannerService;
+import com.techcobber.smarttrader.v1.services.MarketScannerService.GranularityConfig;
 import com.techcobber.smarttrader.v1.services.OrderService;
 import com.techcobber.smarttrader.v1.services.TradeDecisionService;
 import com.techcobber.smarttrader.v1.services.TradingOrchestrator;
-import com.techcobber.smarttrader.v1.strategy.PatternUtils;
+import com.techcobber.smarttrader.v1.services.UserService;
+import com.techcobber.smarttrader.v1.strategy.PriceActionStrategy;
+import com.techcobber.smarttrader.v1.strategy.RiskManager.RiskAssessment;
+import com.techcobber.smarttrader.v1.strategy.TrendAnalyzer;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import lombok.RequiredArgsConstructor;
@@ -54,20 +61,25 @@ public class MarketScanScheduler {
 
 	@Value("${APP_DEFAULT_USER}")
 	private String defaultUserId;
-	@Value("${candles.ignore.names:BTC-USDC,ETH-USDC}")
-	private List<String> ignoreProductIds;
+	@Value("${trading.granularity.ltf:FIFTEEN_MINUTE}")
+	private String ltfGranularityName;
+	@Value("${trading.granularity.confirm:ONE_HOUR}")
+	private String confirmGranularityName;
+	@Value("${trading.granularity.htf:TWO_HOUR}")
+	private String htfGranularityName;
 	static final int DEFAULT_LIMIT = 10;
 	private static final int CANDLE_COUNT = 100;
-	private static final Double BASE_SIZE = 25.0;
 
 	private final CoinbaseClientFactory coinbaseClientFactory;
 	private final CircuitBreakerRegistry circuitBreakerRegistry;
-
+	private final CoinsService coinsService;
 	private volatile List<CoinScanResult> latestResults = Collections.emptyList();
 	private final TradingOrchestrator tradingOrchestrator;
-	private final CoinsRepository coinsRepository;
+	
 	private final TradeDecisionService tradeDecisionService; // optional, may be null
 	private final OrderService orderService;
+	private final UserPreferencesRepository userPreferencesRepository;
+	private final UserService userService;
 
 	/**
 	 * Scheduled task — runs every hour (3 600 000 ms). The initial delay allows the
@@ -103,7 +115,8 @@ public class MarketScanScheduler {
 	 */
 	public List<CoinScanResult> runScanNow(String userId, int limit) throws CoinbaseAdvancedException {
 		CoinbasePublicServiceImpl publicService = createPublicService(userId);
-		MarketScannerService scanner = new MarketScannerService(publicService);
+		MarketScannerService scanner = new MarketScannerService(
+				publicService, new PriceActionStrategy(), new TrendAnalyzer(), null, buildGranularityConfig());
 		List<CoinScanResult> results = scanner.scanUSDCPairs(limit);
 		latestResults = results;
 		return results;
@@ -128,11 +141,12 @@ public class MarketScanScheduler {
 	 */
 	public List<MyCandle> fetchCandlesForProduct(String userId, String productId) throws CoinbaseAdvancedException {
 		CoinbasePublicServiceImpl publicService = createPublicService(userId);
+		Granularity ltf = buildGranularityConfig().ltf();
 
 		long endTime = Instant.now().getEpochSecond();
-		long startTime = endTime - 3600L * CANDLE_COUNT;
+		long startTime = endTime - MarketScannerService.granularityToSeconds(ltf) * CANDLE_COUNT;
 
-		ListCandles listCandles = publicService.fetchCandles(productId, startTime, endTime, Granularity.ONE_HOUR);
+		ListCandles listCandles = publicService.fetchCandles(productId, startTime, endTime, ltf);
 		if (listCandles == null || listCandles.getCandles() == null) {
 			return Collections.emptyList();
 		}
@@ -146,42 +160,69 @@ public class MarketScanScheduler {
 		log.info("Scheduled order status update completed.");
 	}
 
-	@Scheduled(fixedDelayString = "${scanner.candles.interval.ms:3600000}", initialDelayString = "${scanner.candles.initial.delay.ms:120000}")
+	@Scheduled(fixedDelayString = "${scanner.candles.interval.ms:300000}", initialDelayString = "${scanner.candles.initial.delay.ms:120000}")
 	public void scheduledCandleFetch() {
 		log.info("Scheduled candle fetch starting…");
-		List<String> productIds = coinsRepository.findAll().stream()
-				.filter(coin -> coin.productId() != null && !ignoreProductIds.contains(coin.productId()))
-				.map(coin -> coin.productId()).toList();
+		List<String> productIds = coinsService.findProductIdToProcess();
 		try {
 			productIds.forEach(pId -> {
 				List<MyCandle> candles = fetchCandlesForProduct(pId);
-				TradeDecision decision = tradingOrchestrator.executeAnalysis(candles, pId);
-				log.info("Scheduled candle fetch completed for {}. Trade decision: {}", pId, decision);
-				// Persist decision when confidence > 0.70 and a strong pattern exists
-				if (decision != null) {
-					boolean hasStrongPattern = false;
-					if (decision.getDetectedPatterns() != null) {
-						hasStrongPattern = PatternUtils.hasStrongPatternByNames(decision.getDetectedPatterns());
-					}
-					if (decision.getConfidence() > 0.70 && hasStrongPattern) {
-						try {
-							tradeDecisionService.save(decision);
-							OrderRequest request = OrderRequest.builder()
-									.productId(pId)
-									.side(decision.getSignal().name())
-									.orderType("LIMIT")
-									.baseSize(BASE_SIZE) // Example fixed size; in real use this would be dynamic
-									.limitPrice(decision.getSuggestedPrice())
-									.comments("Auto-generated order based on market scan")
-									.build();
-							OrderResponse response = orderService.placeOrder(defaultUserId, request);
-							log.info("Persisted TradeDecision for {} (confidence: {}) for ", pId, decision.getConfidence(), response.getProductId());
-						} catch (Exception e) {
-							log.warn("Failed to persist TradeDecision for {}: {}", pId, e.getMessage());
-						}
-					}
+
+				// Resolve user preferences and account balance for risk-aware analysis.
+				UserPreferences prefs = userPreferencesRepository
+						.findByUserId(defaultUserId).orElse(null);
+				double balance = 0.0;
+				try {
+					balance = userService.findByUserName(defaultUserId).getCurrentFunds();
+				} catch (Exception ex) {
+					log.warn("Could not fetch account balance for {}: {}", defaultUserId, ex.getMessage());
 				}
 
+				// Full risk-gated analysis: replaces bare executeAnalysis() so that
+				// location filter, ATR spike guard, consolidation check, and R:R gate
+				// all fire before any order is placed.
+				java.util.Map<String, Object> result =
+						tradingOrchestrator.executeWithRisk(candles, pId, prefs, balance);
+
+				TradeDecision decision = (TradeDecision) result.get("decision");
+				RiskAssessment risk    = (RiskAssessment) result.get("riskAssessment");
+
+				log.info("Scheduled candle fetch completed for {}. Signal: {} | RiskApproved: {}",
+						pId, decision != null ? decision.getSignal() : "N/A",
+						risk != null ? risk.isApproved() : "not assessed");
+
+				// Only place an order when the risk manager has explicitly approved it.
+				// This ensures confidence, location, R:R, and HTF alignment were all met.
+				if (decision != null && risk != null && risk.isApproved()
+						&& decision.getSignal() == Signal.BUY) {
+					try {
+						tradeDecisionService.save(decision);
+						OrderRequest orderRequest = OrderRequest.builder()
+								.productId(pId)
+								.side(decision.getSignal().name())
+								.orderType("LIMIT")
+								.baseSize(risk.getPositionSize())
+								.limitPrice(decision.getSuggestedPrice())
+								.stopLoss(risk.getStopLoss())
+								.takeProfit(risk.getTakeProfit())
+								.entryPriceNum(decision.getSuggestedPrice())
+								.comments(String.format(
+										"Auto-generated BUY — confidence=%.2f R:R=%.2f SL=%.4f TP=%.4f",
+										decision.getConfidence(), risk.getRiskRewardRatio(),
+										risk.getStopLoss(), risk.getTakeProfit()))
+								.build();
+						OrderResponse response = orderService.placeOrder(defaultUserId, orderRequest);
+						log.info("Order placed for {} — success={} coinbaseId={}",
+								pId, response.isSuccess(), response.getCoinbaseOrderId());
+					} catch (Exception e) {
+						log.warn("Failed to place order for {}: {}", pId, e.getMessage());
+					}
+				} else if (decision != null && risk != null && !risk.isApproved()) {
+					log.info("Trade decision for {} NOT approved by risk manager — skipping order placement. " +
+							"Confidence: {}, R:R: {}, SL: {}, TP: {}",
+							pId, decision.getConfidence(), risk.getRiskRewardRatio(),
+							risk.getStopLoss(), risk.getTakeProfit());
+				}
 			});
 
 		} catch (Exception e) {
@@ -195,24 +236,46 @@ public class MarketScanScheduler {
 			return Collections.emptyList();
 		}
 		CoinbasePublicServiceImpl publicService = createPublicService(defaultUserId);
+		Granularity ltf = buildGranularityConfig().ltf();
 
 		long endTime = Instant.now().getEpochSecond();
-		long startTime = endTime - 3600L * CANDLE_COUNT;
+		long startTime = endTime - MarketScannerService.granularityToSeconds(ltf) * CANDLE_COUNT;
 		ListCandles listCandles = null;
 
 		log.info("Fetching candles for product {}", productId);
 		try {
-			listCandles = publicService.fetchCandles(productId, startTime, endTime, Granularity.ONE_HOUR);
+			listCandles = publicService.fetchCandles(productId, startTime, endTime, ltf);
 		} catch (Exception e) {
 			log.error("Failed to fetch candles for product {}: {}", productId, e.getMessage());
 		}
 		if (listCandles == null || listCandles.getCandles() == null) {
 			return Collections.emptyList();
 		}
-		log.info("Fetched {} candles for product BTC-USDC", listCandles.getCandles().size());
+		log.info("Fetched {} candles for product {}", listCandles.getCandles().size(), productId);
 		// Sort candles by start time ascending (newest last) before returning
 		return listCandles.getCandles().stream().sorted((c1, c2) -> Long.compare(c1.getStart(), c2.getStart()))
 				.toList();
+	}
+
+	/**
+	 * Builds a {@link GranularityConfig} from injected property values.
+	 * Falls back to defaults for any unrecognised property value.
+	 */
+	private GranularityConfig buildGranularityConfig() {
+		Granularity ltf     = parseGranularity(ltfGranularityName,     Granularity.FIFTEEN_MINUTE);
+		Granularity confirm = parseGranularity(confirmGranularityName, Granularity.ONE_HOUR);
+		Granularity htf     = parseGranularity(htfGranularityName,     Granularity.TWO_HOUR);
+		return new GranularityConfig(ltf, confirm, htf);
+	}
+
+	private static Granularity parseGranularity(String name, Granularity fallback) {
+		if (name == null || name.isBlank()) return fallback;
+		try {
+			return Granularity.valueOf(name.trim().toUpperCase());
+		} catch (IllegalArgumentException e) {
+			log.warn("Unknown granularity '{}' — using default {}", name, fallback);
+			return fallback;
+		}
 	}
 
 	/**

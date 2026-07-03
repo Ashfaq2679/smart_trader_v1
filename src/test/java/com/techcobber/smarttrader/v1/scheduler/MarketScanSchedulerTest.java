@@ -3,16 +3,21 @@ package com.techcobber.smarttrader.v1.scheduler;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,12 +31,20 @@ import com.coinbase.advanced.client.CoinbaseAdvancedClient;
 import com.coinbase.advanced.model.common.Granularity;
 import com.techcobber.smarttrader.v1.models.ListCandles;
 import com.techcobber.smarttrader.v1.models.MyCandle;
-import com.techcobber.smarttrader.v1.repositories.CoinsRepository;
+import com.techcobber.smarttrader.v1.models.OrderResponse;
+import com.techcobber.smarttrader.v1.models.TradeDecision;
+import com.techcobber.smarttrader.v1.models.TradeDecision.Signal;
+import com.techcobber.smarttrader.v1.models.User;
+import com.techcobber.smarttrader.v1.repositories.UserPreferencesRepository;
 import com.techcobber.smarttrader.v1.services.CoinbaseClientFactory;
 import com.techcobber.smarttrader.v1.services.CoinbasePublicServiceImpl;
+import com.techcobber.smarttrader.v1.services.CoinsService;
+import com.techcobber.smarttrader.v1.services.MarketScannerService;
 import com.techcobber.smarttrader.v1.services.OrderService;
 import com.techcobber.smarttrader.v1.services.TradeDecisionService;
 import com.techcobber.smarttrader.v1.services.TradingOrchestrator;
+import com.techcobber.smarttrader.v1.services.UserService;
+import com.techcobber.smarttrader.v1.strategy.RiskManager.RiskAssessment;
 
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 
@@ -41,6 +54,9 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
  */
 @ExtendWith(MockitoExtension.class)
 class MarketScanSchedulerTest {
+	
+    @Mock
+    private MarketScannerService marketScannerService;
 
 	@Mock
 	private CoinbaseClientFactory coinbaseClientFactory;
@@ -48,20 +64,39 @@ class MarketScanSchedulerTest {
 	@Mock
 	private CoinbaseAdvancedClient mockClient;
 
-	private CircuitBreakerRegistry circuitBreakerRegistry;
+	@Mock
+	private TradingOrchestrator tradingOrchestrator;
 
-	private MarketScanScheduler scheduler;
-	private TradingOrchestrator tradingOrchestrator; // Not used in current tests but required for constructor
-	private CoinsRepository coinsRepository;
+	@Mock
+	private CoinsService coinsService;
+
+	@Mock
 	private TradeDecisionService tradeDecisionService;
+
+	@Mock
 	private OrderService orderService;
 
-	@BeforeEach
-	void setUp() {
-		circuitBreakerRegistry = CircuitBreakerRegistry.ofDefaults();
-		scheduler = new MarketScanScheduler(coinbaseClientFactory, circuitBreakerRegistry, tradingOrchestrator,
-				coinsRepository, tradeDecisionService, orderService);
-	}
+	@Mock
+	private UserPreferencesRepository userPreferencesRepository;
+
+	@Mock
+	private UserService userService;
+
+	@Mock
+	private CircuitBreakerRegistry circuitBreakerRegistry;
+	private MarketScanScheduler scheduler;
+
+    @BeforeEach
+    void setUp() {
+        scheduler = new MarketScanScheduler(coinbaseClientFactory, 
+        		circuitBreakerRegistry, 
+        		coinsService, 
+        		tradingOrchestrator, 
+        		tradeDecisionService, 
+        		orderService, 
+        		userPreferencesRepository, 
+        		userService);
+    }
 
 	// =======================================================================
 	// getLatestResults
@@ -229,6 +264,111 @@ class MarketScanSchedulerTest {
 
 			assertThat(result).isNotNull();
 			verify(coinbaseClientFactory).getClientForUser("user-1");
+		}
+	}
+
+	// =======================================================================
+	// scheduledCandleFetch — order-placement gating
+	// =======================================================================
+
+	@Nested
+	@DisplayName("scheduledCandleFetch order-placement gating")
+	class ScheduledCandleFetchTests {
+
+		/** Builds a minimal approved RiskAssessment. */
+		private RiskAssessment approvedRisk() {
+			return new RiskAssessment(10.0, 95.0, 106.0, 2.2, true,
+					"approved", 94.0, 97.0);
+		}
+
+		/** Builds a minimal rejected RiskAssessment (R:R too low). */
+		private RiskAssessment rejectedRisk(String reason) {
+			return new RiskAssessment(0, 95.0, 101.0, 0.9, false,
+					reason, 94.0, 0.0);
+		}
+
+		private TradeDecision buyDecision() {
+			return TradeDecision.builder()
+					.productId("BTC-USDC").signal(Signal.BUY)
+					.confidence(0.82).suggestedPrice(100.0).build();
+		}
+
+		private TradeDecision holdDecision() {
+			return TradeDecision.builder()
+					.productId("BTC-USDC").signal(Signal.HOLD)
+					.confidence(0.5).build();
+		}
+
+		/** One product coin visible to the scheduler. */
+		private com.techcobber.smarttrader.v1.models.CoinDocument btcCoin() {
+			return new com.techcobber.smarttrader.v1.models.CoinDocument("BTC", 1, "BTC-USDC");
+		}
+
+		/** User with £1 000 balance. */
+		private User aUser() {
+			User u = new User();
+			u.setCurrentFunds(1000.0);
+			return u;
+		}
+
+		/** Wire up the mocks that every test in this class needs. */
+		private void wireCommon() {
+			when(coinsService.findProductIdToProcess()).thenReturn(List.of("BTC-USDC"));
+			when(userPreferencesRepository.findByUserId(any())).thenReturn(Optional.empty());
+			when(userService.findByUserName(any())).thenReturn(aUser());
+		}
+
+		@Test
+		@DisplayName("Places order when risk is approved for a BUY signal")
+		void placesOrderOnApprovedBuy() {
+			wireCommon();
+			when(tradingOrchestrator.executeWithRisk(any(), anyString(), any(), anyDouble()))
+					.thenReturn(Map.of("decision", buyDecision(), "riskAssessment", approvedRisk()));
+			when(orderService.placeOrder(any(), any()))
+					.thenReturn(OrderResponse.builder().success(true).build());
+
+			scheduler.scheduledCandleFetch();
+
+			verify(orderService).placeOrder(any(), any());
+		}
+
+		@Test
+		@DisplayName("Does NOT place order when risk is rejected")
+		void doesNotPlaceOrderOnRejectedRisk() {
+			wireCommon();
+			when(tradingOrchestrator.executeWithRisk(any(), anyString(), any(), anyDouble()))
+					.thenReturn(Map.of("decision", buyDecision(),
+							"riskAssessment", rejectedRisk("BUY rejected: R:R 0.90 < required 2.0")));
+
+			scheduler.scheduledCandleFetch();
+
+			verify(orderService, never()).placeOrder(any(), any());
+		}
+
+		@Test
+		@DisplayName("Does NOT place order when signal is HOLD even if risk would pass")
+		void doesNotPlaceOrderOnHoldSignal() {
+			wireCommon();
+			// Risk manager returns nothing for HOLD (not in the result map)
+			when(tradingOrchestrator.executeWithRisk(any(), anyString(), any(), anyDouble()))
+					.thenReturn(Map.of("decision", holdDecision()));
+
+			scheduler.scheduledCandleFetch();
+
+			verify(orderService, never()).placeOrder(any(), any());
+		}
+
+		@Test
+		@DisplayName("Does NOT place order when no riskAssessment is present in result")
+		void doesNotPlaceOrderWhenRiskAssessmentAbsent() {
+			wireCommon();
+			// riskAssessment key absent — signal is BUY but risk was skipped
+			when(tradingOrchestrator.executeWithRisk(any(), anyString(), any(), anyDouble()))
+					.thenReturn(Map.of("decision", buyDecision()));
+
+			scheduler.scheduledCandleFetch();
+
+			verify(orderService, never()).placeOrder(any(), any());
 		}
 	}
 }

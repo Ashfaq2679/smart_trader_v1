@@ -17,13 +17,18 @@ import com.techcobber.smarttrader.v1.strategy.PriceActionStrategy;
 import com.techcobber.smarttrader.v1.strategy.RiskManager;
 import com.techcobber.smarttrader.v1.strategy.RiskManager.RiskAssessment;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class TradingOrchestrator {
 
 	private static final double MIN_CONFIDENCE = 0.65;
+
+	/** Injected singleton — no need to create a new instance per call. */
+	private final RiskManager riskManager;
 
 	private final EmaIndicator emaIndicator = new EmaIndicator();
 	private final AtrIndicator atrIndicator = new AtrIndicator();
@@ -36,27 +41,27 @@ public class TradingOrchestrator {
 					.confidence(0.0)
 					.reasoning("No candle data available for analysis")
 					.build();
-		log.info("========================================");
+		log.debug("========================================");
 		log.info("Starting trading analysis for product: {}", productId);
-		log.info("Candle count: {}", candles.size());
-		log.info("========================================");
+		log.debug("Candle count: {}", candles.size());
+		log.debug("========================================");
 
 		PriceActionStrategy strategy = new PriceActionStrategy();
-		log.info("Using strategy: {}", strategy.getName());
+		log.debug("Using strategy: {}", strategy.getName());
 
 		TradeDecision decision = strategy.analyze(candles, productId);
 		decision.setProductId(productId);
 		decision.setSuggestedPrice(candles.get(candles.size() - 1).getClose());
 
-		log.info("========================================");
+		log.debug("========================================");
 		log.info("Analysis complete for {}", productId);
-		log.info("Product: {} | Signal: {} | Confidence: {} | Trend: {}",
+		log.debug("Product: {} | Signal: {} | Confidence: {} | Trend: {}",
 				productId, decision.getSignal(), decision.getConfidence(), decision.getTrendDirection());
-		log.info("Detected patterns: {}", decision.getDetectedPatterns());
-		log.info("Support: {} | Resistance: {}",
+		log.debug("Detected patterns: {}", decision.getDetectedPatterns());
+		log.debug("Support: {} | Resistance: {}",
 				decision.getNearestSupport(), decision.getNearestResistance());
-		log.info("Reasoning: {}", decision.getReasoning());
-		log.info("========================================");
+		log.info("Reasoning: Product: {} | {}", productId, decision.getReasoning());
+		log.debug("========================================");
 
 		return decision;
 	}
@@ -79,10 +84,10 @@ public class TradingOrchestrator {
 					decision.getConfidence(), minScore);
 
 			double currentPrice = candles.get(candles.size() - 1).getClose();
-			RiskManager riskManager = new RiskManager();
-			// Pass locationOK from decision: price near EMA50 or support
+				// locationOK: price must be near EMA50 pullback or support AND not already crowding resistance
 			boolean locationOK = decision.getDistanceFromEma50Pct() != null
-					&& decision.getDistanceFromEma50Pct() <= 3.0;
+						&& decision.getDistanceFromEma50Pct() <= 3.0
+						&& !Boolean.TRUE.equals(decision.getNearResistanceDetected());
 			boolean htfAligned = decision.getHtfTrendDirection() == null
 					|| !"DOWN".equals(decision.getHtfTrendDirection());
 
@@ -99,7 +104,7 @@ public class TradingOrchestrator {
 					decision.getSignal(), decision.getConfidence(), minScore, consolidating);
 		}
 
-		log.info("Full analysis complete for {}", productId);
+		log.debug("Full analysis complete for {}", productId);
 		return result;
 	}
 

@@ -39,6 +39,7 @@ class ConsolidationDetectorTest {
         c.setHigh(high);
         c.setLow(low);
         c.setClose(close);
+        c.setVolume(1000.0); // arbitrary volume
         return c;
     }
 
@@ -69,7 +70,7 @@ class ConsolidationDetectorTest {
         void detectsConsolidation() {
             when(mockAtr.calculate(any())).thenReturn(0.3); // ATR % = 0.3/100 = 0.3% < 0.5%
             List<MyCandle> candles = tightRangeCandles();
-            ConsolidationResult result = detector.detect(candles, 20, 2.5, 0.5);
+            ConsolidationResult result = detector.detect(candles, 20, 2.5, 0.5, 1.5);
             assertThat(result.isConsolidating()).isTrue();
         }
 
@@ -78,7 +79,7 @@ class ConsolidationDetectorTest {
         void notConsolidatingWideRange() {
             when(mockAtr.calculate(any())).thenReturn(0.3);
             List<MyCandle> candles = wideRangeCandles();
-            ConsolidationResult result = detector.detect(candles, 20, 2.5, 0.5);
+            ConsolidationResult result = detector.detect(candles, 20, 2.5, 0.5, 1.5);
             assertThat(result.isConsolidating()).isFalse();
         }
 
@@ -87,7 +88,7 @@ class ConsolidationDetectorTest {
         void notConsolidatingHighAtr() {
             when(mockAtr.calculate(any())).thenReturn(5.0); // 5% ATR > 0.5% threshold
             List<MyCandle> candles = tightRangeCandles();
-            ConsolidationResult result = detector.detect(candles, 20, 2.5, 0.5);
+            ConsolidationResult result = detector.detect(candles, 20, 2.5, 0.5, 1.5);
             assertThat(result.isConsolidating()).isFalse();
         }
     }
@@ -115,7 +116,7 @@ class ConsolidationDetectorTest {
         void resultContainsMetrics() {
             when(mockAtr.calculate(any())).thenReturn(0.2);
             List<MyCandle> candles = tightRangeCandles();
-            ConsolidationResult result = detector.detect(candles, 20, 2.5, 0.5);
+            ConsolidationResult result = detector.detect(candles, 20, 2.5, 0.5,1.5);
             assertThat(result.getRangePercent()).isGreaterThanOrEqualTo(0.0);
             assertThat(result.getAtrPercent()).isGreaterThanOrEqualTo(0.0);
             assertThat(result.getDescription()).isNotBlank();

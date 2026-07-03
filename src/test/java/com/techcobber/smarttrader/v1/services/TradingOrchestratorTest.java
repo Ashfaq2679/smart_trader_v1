@@ -5,6 +5,7 @@ import com.techcobber.smarttrader.v1.models.Order;
 import com.techcobber.smarttrader.v1.models.TradeDecision;
 import com.techcobber.smarttrader.v1.models.TradeDecision.Signal;
 import com.techcobber.smarttrader.v1.models.UserPreferences;
+import com.techcobber.smarttrader.v1.strategy.RiskManager;
 import com.techcobber.smarttrader.v1.strategy.RiskManager.RiskAssessment;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -26,7 +27,7 @@ class TradingOrchestratorTest {
 
     @BeforeEach
     void setUp() {
-        orchestrator = new TradingOrchestrator();
+        orchestrator = new TradingOrchestrator(new RiskManager());
     }
 
     // -----------------------------------------------------------------------
@@ -48,28 +49,58 @@ class TradingOrchestratorTest {
     }
 
     /**
-     * Creates 28 candles: a gentle uptrend followed by a pullback to near EMA50,
-     * then a bullish bounce — satisfying the location filter for BUY.
+     * Creates 28 candles: gradual grind with two ascending swing highs and two ascending
+     * swing lows, ending at a bullish bounce off recent support.
+     *
+     * <p>Design constraints (verified analytically):
+     * <ul>
+     *   <li>Trend (UP): window[i=8..27] swing highs 104.5→120.0 (higher-high) and
+     *       swing lows 100.2→103.6 (higher-low) → bullishSignals=2 ✓</li>
+     *   <li>EMA50 (simple avg of 28 closes) ≈ 102.1; final close=105.0;
+     *       distanceFromEMA50 ≈ 2.87% ≤ 3% → onBullishPullback=true ✓</li>
+     *   <li>Support=103.6 (1.33% below price); Resistance=120.0 (14.3% above price) ✓</li>
+     *   <li>ATR(14) ≈ 1.55; buffered R:R ≈ 6.5 ≥ MIN_RR=2.0 ✓</li>
+     * </ul>
      */
     private static List<MyCandle> bullishUptrendCandles() {
         List<MyCandle> candles = new ArrayList<>();
-        for (int i = 0; i < 20; i++) {
-            double base  = 100.0 + i * 0.25;
-            double wave  = 0.5 * Math.sin(i * 0.8);
-            double open  = base + wave;
-            double close = open + 0.2 + (i % 3 == 0 ? -0.1 : 0.1);
-            double high  = Math.max(open, close) + 0.4;
-            double low   = Math.min(open, close) - 0.4;
-            candles.add(candle(open, close, high, low, i));
-        }
-        for (int i = 20; i < 25; i++) {
-            double base  = 105.0 - (i - 20) * 0.6;
-            candles.add(candle(base + 0.1, base - 0.1, base + 0.5, base - 0.5, i));
-        }
-        double s = 102.0;
-        candles.add(candle(s + 0.5, s - 0.3, s + 0.8, s - 0.5, 25));
-        candles.add(candle(s - 0.3, s + 1.0, s + 1.2, s - 0.5, 26));
-        candles.add(candle(s + 1.0, s + 2.5, s + 2.6, s + 0.9, 27));
+        // Phase 0 (i=0..9): slow grind 99→101, small bodies, ATR ≈ 0.8/candle.
+        candles.add(candle(99.0,  99.2,  99.5,  98.8,  0));
+        candles.add(candle(99.2,  99.4,  99.7,  98.9,  1));
+        candles.add(candle(99.4,  99.6,  99.9,  99.1,  2));
+        candles.add(candle(99.6,  99.9,  100.2, 99.3,  3));
+        candles.add(candle(99.9,  100.1, 100.4, 99.6,  4));
+        candles.add(candle(100.1, 100.3, 100.6, 99.8,  5));
+        candles.add(candle(100.3, 100.5, 100.8, 100.0, 6));
+        candles.add(candle(100.5, 100.7, 101.0, 100.2, 7));
+        candles.add(candle(100.7, 100.9, 101.2, 100.4, 8));
+        candles.add(candle(100.9, 101.1, 101.4, 100.6, 9));
+        // Phase 1 (i=10..12): first swing high 104.5, then fade.
+        candles.add(candle(101.1, 101.4, 104.5, 100.8, 10)); // swing high 104.5
+        candles.add(candle(101.4, 101.2, 101.7, 100.9, 11));
+        candles.add(candle(101.2, 101.0, 101.5, 100.7, 12));
+        // Phase 2 (i=13..16): swing low 100.2, then recovery.
+        candles.add(candle(101.0, 101.1, 101.4, 100.2, 13)); // swing low 100.2
+        candles.add(candle(101.1, 101.3, 101.6, 100.9, 14));
+        candles.add(candle(101.3, 101.5, 101.8, 101.0, 15));
+        candles.add(candle(101.5, 101.7, 102.0, 101.2, 16));
+        // Phase 3 (i=17): spike candle — close=105.0 keeps EMA50 ≈ 102.1; high=120.0
+        // forms distant resistance (14.3% above final price). ATR decays to ≈1.58 by i=27.
+        candles.add(candle(101.7, 105.0, 120.0, 101.4, 17)); // swing high 120.0 — distant resistance
+        // Phase 4 (i=18..23): consolidation. Highs strictly decrease (105.3→104.8) so no
+        // intermediate swing high forms. i=19 low=103.6 prevents i=20 from being a pivot low.
+        candles.add(candle(105.0, 104.5, 105.3, 104.2, 18));
+        candles.add(candle(104.5, 104.0, 105.2, 103.6, 19)); // low=103.6 — first pivot at 103.6
+        candles.add(candle(104.0, 104.2, 105.1, 103.7, 20)); // low=103.7 > 103.6 → i=19 is swing low
+        candles.add(candle(104.2, 104.3, 105.0, 103.9, 21));
+        candles.add(candle(104.3, 104.3, 104.9, 103.9, 22));
+        candles.add(candle(104.3, 104.4, 104.8, 104.0, 23));
+        // Phase 5 (i=24): second pivot low 103.6 = i=19 (equal → lowerLows stays 0) → UP trend.
+        candles.add(candle(104.4, 103.8, 104.7, 103.6, 24)); // swing low 103.6
+        // Phase 6 (i=25..27): bullish bounce; final close=105.0.
+        candles.add(candle(103.8, 104.2, 104.6, 103.9, 25));
+        candles.add(candle(104.2, 104.5, 104.8, 104.0, 26));
+        candles.add(candle(104.5, 105.0, 105.3, 104.2, 27)); // close=105.0
         return candles;
     }
 

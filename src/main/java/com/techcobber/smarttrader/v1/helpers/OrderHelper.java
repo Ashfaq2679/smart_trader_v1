@@ -1,5 +1,6 @@
 package com.techcobber.smarttrader.v1.helpers;
 
+import static com.techcobber.smarttrader.v1.models.OrderConstants.MAX_USD_PER_ORDER;
 import static com.techcobber.smarttrader.v1.models.OrderConstants.MSG_ORDER_FAILED;
 import static com.techcobber.smarttrader.v1.models.OrderConstants.MSG_ORDER_PLACED;
 import static com.techcobber.smarttrader.v1.models.OrderConstants.SIDE_BUY;
@@ -8,7 +9,7 @@ import static com.techcobber.smarttrader.v1.models.OrderConstants.STATUS_FAILED;
 import static com.techcobber.smarttrader.v1.models.OrderConstants.STATUS_PENDING;
 import static com.techcobber.smarttrader.v1.models.OrderConstants.STATUS_PLACED;
 import static com.techcobber.smarttrader.v1.models.OrderConstants.TYPE_MARKET;
-import static com.techcobber.smarttrader.v1.models.OrderConstants.MAX_USD_PER_ORDER;
+
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -20,6 +21,7 @@ import com.coinbase.advanced.model.orders.CreateOrderResponse;
 import com.coinbase.advanced.model.orders.LimitGtc;
 import com.coinbase.advanced.model.orders.MarketIoc;
 import com.coinbase.advanced.model.orders.OrderConfiguration;
+import com.coinbase.advanced.model.orders.TriggerGtc;
 import com.coinbase.advanced.orders.OrdersService;
 import com.techcobber.smarttrader.v1.models.Order;
 import com.techcobber.smarttrader.v1.models.OrderRequest;
@@ -48,6 +50,10 @@ public class OrderHelper {
 		order.setQuoteSize(request.getQuoteSize());
 		order.setDecisionFactors(request.getDecisionFactors());
 		order.setComments(request.getComments());
+		// Persist risk management fields so exit evaluation can use them later
+		order.setStopLoss(request.getStopLoss());
+		order.setTakeProfit(request.getTakeProfit());
+		order.setEntryPriceNum(request.getEntryPriceNum());
 		order.setCreatedAt(LocalDateTime.now());
 		order.setUpdatedAt(LocalDateTime.now());
 		
@@ -126,6 +132,14 @@ public class OrderHelper {
 			return new OrderConfiguration.Builder()
 					.marketMarketIoc(marketBuilder.build())
 					.build();
+		} else if (request.getStopLoss() != null && request.getTakeProfit() != null) {
+			return new OrderConfiguration.Builder()
+					.triggerBracketGtc(new TriggerGtc.Builder()
+							.baseSize(String.valueOf(baseSize))
+							.limitPrice(String.format("%.2f", request.getTakeProfit()))
+							.stopTriggerPrice(String.format("%.2f", request.getStopLoss()))
+							.build())
+					.build();
 		} else {
 			Double limitPrice = request.getLimitPrice();
 			// find 0.5% of limit price and subtract from limit price to set as stop price,
@@ -139,10 +153,13 @@ public class OrderHelper {
 					 baseSize = availableQty;
 				}
 			} else {
-				limitPrice = request.getLimitPrice() - (request.getLimitPrice() * 0.005);
+				limitPrice = request.getLimitPrice() - (request.getLimitPrice() * 0.001);
 				// Adjust qty i.e baseSize to MAX_USD_PER_ORDER if order value exceeds max allowed per order.
 				double orderValue = request.getBaseSize() * request.getLimitPrice();
-				if (orderValue > MAX_USD_PER_ORDER) {
+				// Always keep order value as 50$.
+				baseSize = 50.00/(request.getBaseSize()!=null?request.getBaseSize():1.0);
+			
+				if (baseSize > MAX_USD_PER_ORDER) {
 					double adjustedBaseSize = Math.floor(MAX_USD_PER_ORDER / request.getLimitPrice() * 1e8) / 1e8; // avoid floating precision
 					log.info("Adjusting buy order quantity from {} to {} for product: {} to enforce max order value of ${}.",
 							request.getBaseSize(), adjustedBaseSize, request.getProductId(), MAX_USD_PER_ORDER);

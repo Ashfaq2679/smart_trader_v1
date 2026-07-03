@@ -51,4 +51,26 @@ public class OrderRequest {
 
 	/** Optional free-form comment. */
 	private String comments;
+
+	/**
+	 * Stop-loss price computed by the risk manager for this order.
+	 * Persisted to {@link com.techcobber.smarttrader.v1.models.Order} so that
+	 * {@link com.techcobber.smarttrader.v1.services.TradingOrchestrator#evaluateExit}
+	 * can recompute the effective stop floor without needing the original candle data.
+	 */
+	private Double stopLoss;
+
+	/**
+	 * Take-profit price computed by the risk manager.
+	 * Persisted for P&amp;L tracking and exit-target monitoring.
+	 */
+	private Double takeProfit;
+
+	/**
+	 * Intended entry price at the time the order was raised (usually the current
+	 * market price / limit price). Persisted as a numeric convenience field so
+	 * exit math in {@code evaluateExit()} does not have to parse
+	 * {@code averageFilledPrice} which may be null until the order is filled.
+	 */
+	private Double entryPriceNum;
 }

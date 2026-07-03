@@ -43,33 +43,62 @@ import lombok.extern.slf4j.Slf4j;
 public class MarketScannerService {
 
 	private static final int CANDLE_COUNT         = 100;
-	private static final int HTF_CONFIRM_CANDLES  = 50;   // 4H candles (≈ 200h of history)
-	private static final int HTF_DIRECTION_CANDLES = 30;  // 1D candles
+	private static final int HTF_CONFIRM_CANDLES  = 50;   // 1H candles (≈ 50h of history)
+	private static final int HTF_DIRECTION_CANDLES = 30;  // 4H candles (≈ 120h of history)
 	private static final int TREND_LOOKBACK = 20;
 	private static final String DEFAULT_QUOTE_CURRENCY = "USDC";
+
+	/**
+	 * Holds the three timeframe granularities used in analysis.
+	 *
+	 * <ul>
+	 *   <li>{@code ltf} — entry timeframe (default: FIFTEEN_MINUTE)</li>
+	 *   <li>{@code confirm} — confirmation timeframe (default: ONE_HOUR)</li>
+	 *   <li>{@code htf} — directional timeframe (default: TWO_HOUR, proxying 4H)</li>
+	 * </ul>
+	 *
+	 * <p>All three can be overridden via application properties:
+	 * {@code trading.granularity.ltf}, {@code trading.granularity.confirm},
+	 * {@code trading.granularity.htf}.
+	 * Values must match a {@link Granularity} enum constant name.</p>
+	 */
+	public record GranularityConfig(Granularity ltf, Granularity confirm, Granularity htf) {
+		public static GranularityConfig defaults() {
+			return new GranularityConfig(Granularity.FIFTEEN_MINUTE, Granularity.ONE_HOUR, Granularity.TWO_HOUR);
+		}
+	}
 
 	private final CoinbasePublicServiceImpl publicService;
 	private final PriceActionStrategy strategy;
 	private final TrendAnalyzer trendAnalyzer;
 	private final MultiTimeframeAnalyzer mtfAnalyzer;
+	private final GranularityConfig granularityConfig;
 
 	public MarketScannerService(CoinbasePublicServiceImpl publicService) {
-		this(publicService, new PriceActionStrategy(), new TrendAnalyzer(), null);
+		this(publicService, new PriceActionStrategy(), new TrendAnalyzer(), null, GranularityConfig.defaults());
 	}
 
-	// New constructor to allow injecting a strategy, trend analyzer and decision service (for tests and persistence)
 	public MarketScannerService(CoinbasePublicServiceImpl publicService,
 						 PriceActionStrategy strategy,
 						 TrendAnalyzer trendAnalyzer,
 						 TradeDecisionService tradeDecisionService) {
+		this(publicService, strategy, trendAnalyzer, tradeDecisionService, GranularityConfig.defaults());
+	}
+
+	public MarketScannerService(CoinbasePublicServiceImpl publicService,
+						 PriceActionStrategy strategy,
+						 TrendAnalyzer trendAnalyzer,
+						 TradeDecisionService tradeDecisionService,
+						 GranularityConfig granularityConfig) {
 		this.publicService = publicService;
 		this.strategy = strategy;
 		this.trendAnalyzer = trendAnalyzer;
 		this.mtfAnalyzer = new MultiTimeframeAnalyzer();
+		this.granularityConfig = granularityConfig;
 	}
 
 	/**
-	 * Scans all USDC-paired coins using ONE_HOUR granularity and returns
+	 * Scans all USDC-paired coins using the configured LTF granularity and returns
 	 * the top candidates ranked by profit potential.
 	 *
 	 * @param limit maximum number of results to return
@@ -77,7 +106,7 @@ public class MarketScannerService {
 	 * @throws CoinbaseAdvancedException if the exchange API call fails
 	 */
 	public List<CoinScanResult> scanUSDCPairs(int limit) throws CoinbaseAdvancedException {
-		return scanPairs(DEFAULT_QUOTE_CURRENCY, Granularity.ONE_HOUR, limit);
+		return scanPairs(DEFAULT_QUOTE_CURRENCY, granularityConfig.ltf(), limit);
 	}
 
 	/**
@@ -159,15 +188,15 @@ public class MarketScannerService {
 	}
 
 	/**
-	 * Analyses a single product: fetches 1H candles, runs strategy, then lazily
-	 * fetches 4H and 1D candles for HTF alignment validation on BUY candidates.
+	 * Analyses a single product: fetches 15m candles, runs strategy, then lazily
+	 * fetches 1H and 4H candles for HTF alignment validation on BUY candidates.
 	 */
 	CoinScanResult analyseProduct(Product product, long startTime, long endTime,
 			Granularity granularity, double medianVolume) {
 
 		String productId = product.getProductId();
 		try {
-			// Fetch 1H candle data and sort ascending (API returns newest-first)
+			// Fetch 15m candle data and sort ascending (API returns newest-first)
 			ListCandles listCandles = publicService.fetchCandles(productId, startTime, endTime, granularity);
 			if (listCandles == null || listCandles.getCandles() == null
 					|| listCandles.getCandles().isEmpty()) {
@@ -178,7 +207,7 @@ public class MarketScannerService {
 			List<MyCandle> candles = sortAscending(listCandles.getCandles());
 			log.debug("Fetched {} candles for {}", candles.size(), productId);
 
-			// Run price action analysis (1H — without HTF context first)
+			// Run price action analysis (15m — without HTF context first)
 			TradeDecision decision = strategy.analyze(candles, productId);
 			decision.setProductId(productId);
 
@@ -186,7 +215,7 @@ public class MarketScannerService {
 			if (decision.getSignal() == Signal.BUY) {
 				MultiTimeframeResult mtfResult = fetchAndAnalyzeHTF(productId, endTime);
 				if (mtfResult != null && !mtfResult.isAligned()) {
-					log.info("HTF misaligned for {} (1D={}, 4H={}) — downgrading BUY to HOLD",
+					log.info("HTF misaligned for {} (4H={}, 1H={}) — downgrading BUY to HOLD",
 							productId, mtfResult.getHtfTrend(), mtfResult.getConfirmTrend());
 					// Re-analyse with HTF context to get the correct HOLD decision and fields
 					decision = strategy.analyze(candles, productId, mtfResult, null, null);
@@ -236,24 +265,24 @@ public class MarketScannerService {
 	}
 
 	/**
-	 * Lazily fetches 4H (confirmation) and 1D (direction) candles for a BUY candidate
+	 * Lazily fetches 1H (confirmation) and 4H (direction) candles for a BUY candidate
 	 * and runs HTF alignment analysis.
 	 *
 	 * @return {@link MultiTimeframeResult} or {@code null} if candles cannot be fetched
 	 */
 	private MultiTimeframeResult fetchAndAnalyzeHTF(String productId, long endTime) {
 		try {
-			long confirm4hStart = endTime - granularityToSeconds(Granularity.TWO_HOUR) * 2 * HTF_CONFIRM_CANDLES;
-			ListCandles confirm4h = publicService.fetchCandles(productId, confirm4hStart, endTime, Granularity.TWO_HOUR);
+			long confirm1hStart = endTime - granularityToSeconds(granularityConfig.confirm()) * HTF_CONFIRM_CANDLES;
+			ListCandles confirm1h = publicService.fetchCandles(productId, confirm1hStart, endTime, granularityConfig.confirm());
 
-			long direction1dStart = endTime - granularityToSeconds(Granularity.ONE_DAY) * HTF_DIRECTION_CANDLES;
-			ListCandles direction1d = publicService.fetchCandles(productId, direction1dStart, endTime, Granularity.ONE_DAY);
+			long direction4hStart = endTime - granularityToSeconds(granularityConfig.htf()) * HTF_DIRECTION_CANDLES;
+			ListCandles direction4h = publicService.fetchCandles(productId, direction4hStart, endTime, granularityConfig.htf());
 
 			// Sort ascending — API returns newest-first
-			List<MyCandle> confirmCandles = (confirm4h != null && confirm4h.getCandles() != null)
-					? sortAscending(confirm4h.getCandles()) : List.of();
-			List<MyCandle> htfCandles = (direction1d != null && direction1d.getCandles() != null)
-					? sortAscending(direction1d.getCandles()) : List.of();
+			List<MyCandle> confirmCandles = (confirm1h != null && confirm1h.getCandles() != null)
+					? sortAscending(confirm1h.getCandles()) : List.of();
+			List<MyCandle> htfCandles = (direction4h != null && direction4h.getCandles() != null)
+					? sortAscending(direction4h.getCandles()) : List.of();
 
 			if (confirmCandles.isEmpty() && htfCandles.isEmpty()) {
 				log.debug("No HTF candles available for {} — skipping MTF check", productId);
@@ -331,7 +360,7 @@ public class MarketScannerService {
 	/**
 	 * Converts a granularity enum to its equivalent in seconds.
 	 */
-	static long granularityToSeconds(Granularity granularity) {
+	public static long granularityToSeconds(Granularity granularity) {
 		return switch (granularity) {
 			case ONE_MINUTE -> 60L;
 			case FIVE_MINUTE -> 300L;
