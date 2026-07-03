@@ -39,6 +39,7 @@ class ConsolidationDetectorTest {
         c.setHigh(high);
         c.setLow(low);
         c.setClose(close);
+        c.setVolume(1000.0); // arbitrary volume
         return c;
     }
 
