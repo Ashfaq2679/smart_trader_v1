@@ -39,6 +39,7 @@ import com.techcobber.smarttrader.v1.repositories.UserPreferencesRepository;
 import com.techcobber.smarttrader.v1.services.CoinbaseClientFactory;
 import com.techcobber.smarttrader.v1.services.CoinbasePublicServiceImpl;
 import com.techcobber.smarttrader.v1.services.CoinsService;
+import com.techcobber.smarttrader.v1.services.MarketScannerService;
 import com.techcobber.smarttrader.v1.services.OrderService;
 import com.techcobber.smarttrader.v1.services.TradeDecisionService;
 import com.techcobber.smarttrader.v1.services.TradingOrchestrator;
@@ -53,6 +54,9 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
  */
 @ExtendWith(MockitoExtension.class)
 class MarketScanSchedulerTest {
+	
+    @Mock
+    private MarketScannerService marketScannerService;
 
 	@Mock
 	private CoinbaseClientFactory coinbaseClientFactory;
@@ -78,13 +82,21 @@ class MarketScanSchedulerTest {
 	@Mock
 	private UserService userService;
 
+	@Mock
 	private CircuitBreakerRegistry circuitBreakerRegistry;
 	private MarketScanScheduler scheduler;
 
-	@BeforeEach
-	void setUp() {
-		circuitBreakerRegistry = CircuitBreakerRegistry.ofDefaults();
-	}
+    @BeforeEach
+    void setUp() {
+        scheduler = new MarketScanScheduler(coinbaseClientFactory, 
+        		circuitBreakerRegistry, 
+        		coinsService, 
+        		tradingOrchestrator, 
+        		tradeDecisionService, 
+        		orderService, 
+        		userPreferencesRepository, 
+        		userService);
+    }
 
 	// =======================================================================
 	// getLatestResults
