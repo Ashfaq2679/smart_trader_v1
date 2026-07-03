@@ -35,11 +35,10 @@ import com.techcobber.smarttrader.v1.models.OrderResponse;
 import com.techcobber.smarttrader.v1.models.TradeDecision;
 import com.techcobber.smarttrader.v1.models.TradeDecision.Signal;
 import com.techcobber.smarttrader.v1.models.User;
-import com.techcobber.smarttrader.v1.models.UserPreferences;
-import com.techcobber.smarttrader.v1.repositories.CoinsRepository;
 import com.techcobber.smarttrader.v1.repositories.UserPreferencesRepository;
 import com.techcobber.smarttrader.v1.services.CoinbaseClientFactory;
 import com.techcobber.smarttrader.v1.services.CoinbasePublicServiceImpl;
+import com.techcobber.smarttrader.v1.services.CoinsService;
 import com.techcobber.smarttrader.v1.services.OrderService;
 import com.techcobber.smarttrader.v1.services.TradeDecisionService;
 import com.techcobber.smarttrader.v1.services.TradingOrchestrator;
@@ -65,7 +64,7 @@ class MarketScanSchedulerTest {
 	private TradingOrchestrator tradingOrchestrator;
 
 	@Mock
-	private CoinsRepository coinsRepository;
+	private CoinsService coinsService;
 
 	@Mock
 	private TradeDecisionService tradeDecisionService;
@@ -85,9 +84,6 @@ class MarketScanSchedulerTest {
 	@BeforeEach
 	void setUp() {
 		circuitBreakerRegistry = CircuitBreakerRegistry.ofDefaults();
-		scheduler = new MarketScanScheduler(coinbaseClientFactory, circuitBreakerRegistry,
-				tradingOrchestrator, coinsRepository, tradeDecisionService, orderService,
-				userPreferencesRepository, userService);
 	}
 
 	// =======================================================================
@@ -305,7 +301,7 @@ class MarketScanSchedulerTest {
 
 		/** Wire up the mocks that every test in this class needs. */
 		private void wireCommon() {
-			when(coinsRepository.findAll()).thenReturn(List.of(btcCoin()));
+			when(coinsService.findProductIdToProcess()).thenReturn(List.of("BTC-USDC"));
 			when(userPreferencesRepository.findByUserId(any())).thenReturn(Optional.empty());
 			when(userService.findByUserName(any())).thenReturn(aUser());
 		}
